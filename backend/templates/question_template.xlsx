@@ -1,0 +1,6 @@
+question,subject,year,option1,option2,option3,option4,answer,degree
+"What is the primary function of the liver?",Pharmacology,2023,"Detoxification","Digestion","Respiration","Circulation",A,B.Pharm
+"Which of the following is a beta-blocker?",Pharmacology,2023,"Atenolol","Aspirin","Ibuprofen","Paracetamol",A,B.Pharm
+"Define pharmacokinetics.",Pharmacology,2023,"Study of drug absorption","Study of drug distribution","Study of drug metabolism","Study of drug excretion",D,B.Pharm
+"Which drug is used to treat hypertension?",Pharmacology,2023,"Amlodipine","Amoxicillin","Azithromycin","Atorvastatin",A,B.Pharm
+"What is the mechanism of action of aspirin?",Pharmacology,2023,"COX inhibition","ACE inhibition","Beta-blockade","Calcium channel blockade",A,B.Pharm 
