@@ -182,7 +182,7 @@ const validateTest = (testData) => {
   if (!testData.testData) {
     errors.push('Test data is required');
   } else {
-    const { degree, totalQuestions, timeTaken } = testData.testData;
+    const { degree, totalQuestions, timeTaken, questions } = testData.testData;
     
     if (!degree) {
       errors.push('Degree (exam type) is required');
@@ -192,6 +192,11 @@ const validateTest = (testData) => {
     }
     if (typeof timeTaken !== 'number' || timeTaken < 0) {
       errors.push('Time taken must be a non-negative number');
+    }
+    if (!Array.isArray(questions)) {
+      errors.push('Questions must be an array');
+    } else if (questions.length !== totalQuestions) {
+      errors.push('Questions array length must match total questions');
     }
   }
 

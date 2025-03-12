@@ -129,27 +129,7 @@ const TestTaking = ({ questions, onComplete, subjectId, examType }) => {
       setLoading(true);
       setError(null);
 
-      // Check for unanswered questions
-      const notAnswered = questions.reduce((acc, _, index) => {
-        if (!answers[index]) {
-          acc.push(index + 1);
-        }
-        return acc;
-      }, []);
-
-      if (notAnswered.length > 0) {
-        setUnansweredQuestions(notAnswered);
-        setError(`Please answer all questions before submitting. Unanswered questions: ${notAnswered.join(', ')}`);
-        setSnackbar({
-          open: true,
-          message: `Please answer questions: ${notAnswered.join(', ')}`,
-          severity: 'warning'
-        });
-        setLoading(false);
-        return;
-      }
-
-      // Format answers as a map of questionId to answer
+      // Format answers as a map of questionId to answer (only for answered questions)
       const formattedAnswers = {};
       Object.entries(answers).forEach(([questionIndex, answer]) => {
         const questionId = questions[parseInt(questionIndex)].id;
@@ -166,12 +146,19 @@ const TestTaking = ({ questions, onComplete, subjectId, examType }) => {
       const totalAllowedTime = response.data.data.totalTimeInSeconds;
       const timeTakenInSeconds = totalAllowedTime - timeLeft;
 
+      // Get count of answered and unanswered questions
+      const answeredCount = Object.keys(answers).length;
+      const unansweredCount = questions.length - answeredCount;
+
       // Prepare test data
       const testData = {
         testData: {
           degree: examType,
           totalQuestions: questions.length,
-          timeTaken: timeTakenInSeconds // Send time taken in seconds
+          answeredQuestions: answeredCount,
+          unansweredQuestions: unansweredCount,
+          timeTaken: timeTakenInSeconds,
+          questions: questions.map(q => q.id) // Add all question IDs
         },
         answers: formattedAnswers
       };
@@ -186,15 +173,24 @@ const TestTaking = ({ questions, onComplete, subjectId, examType }) => {
         }
       });
 
+      // Show confirmation dialog if there are unanswered questions
+      if (unansweredCount > 0) {
+        const confirmed = window.confirm(
+          `You have ${unansweredCount} unanswered question${unansweredCount > 1 ? 's' : ''}. Are you sure you want to submit?`
+        );
+        if (!confirmed) {
+          setLoading(false);
+          return;
+        }
+      }
+
       const submitResponse = await apiService.test.submit(testData);
       console.log('Test submission response:', submitResponse);
 
       if (submitResponse?.data?.success) {
-        setUnansweredQuestions([]);
-        console.log('Test submitted successfully, calling onComplete with:', submitResponse.data.data);
         setSnackbar({
           open: true,
-          message: 'Test submitted successfully',
+          message: `Test submitted successfully. You answered ${answeredCount} out of ${questions.length} questions.`,
           severity: 'success'
         });
         onComplete(submitResponse.data.data);

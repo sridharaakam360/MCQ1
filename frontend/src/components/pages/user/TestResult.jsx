@@ -35,7 +35,7 @@ const QuestionAnalysis = ({ question, index }) => {
 
   // Convert option letter to index (A=0, B=1, etc.)
   const getOptionIndex = (optionLetter) => {
-    return optionLetter.charCodeAt(0) - 'A'.charCodeAt(0);
+    return optionLetter ? optionLetter.charCodeAt(0) - 'A'.charCodeAt(0) : -1;
   };
 
   // Get selected and correct option indices
@@ -55,7 +55,7 @@ const QuestionAnalysis = ({ question, index }) => {
         sx={{
           flexDirection: 'column',
           alignItems: 'stretch',
-          bgcolor: 'background.paper',
+          bgcolor: question.isUnanswered ? 'warning.light' : 'background.paper',
           borderRadius: 1,
           mb: 1,
           p: 2,
@@ -64,7 +64,14 @@ const QuestionAnalysis = ({ question, index }) => {
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Typography variant="h6">Question {index + 1}</Typography>
-            {question.isCorrect ? (
+            {question.isUnanswered ? (
+              <Chip
+                icon={<CancelIcon />}
+                label="Not Answered"
+                color="warning"
+                size="small"
+              />
+            ) : question.isCorrect ? (
               <Chip
                 icon={<CheckCircleIcon />}
                 label="Correct"
@@ -141,7 +148,11 @@ const QuestionAnalysis = ({ question, index }) => {
               </Typography>
               <Box sx={{ pl: 2, borderLeft: '4px solid', borderColor: 'info.main' }}>
                 <Typography variant="body2" paragraph>
-                  {question.isCorrect ? (
+                  {question.isUnanswered ? (
+                    <>
+                      You did not answer this question. The correct answer is <strong>{question.correctOption}</strong> ({optionsWithLetters[question.correctOption]}).
+                    </>
+                  ) : question.isCorrect ? (
                     <>
                       You selected option <strong>{question.selectedOption}</strong> ({optionsWithLetters[question.selectedOption]}), which is correct!
                     </>
@@ -328,12 +339,17 @@ const TestResultPage = () => {
                   </Typography>
                   <Typography variant="body2" color="textSecondary">Correct</Typography>
                 </Box>
-                <Typography variant="h4" color="textSecondary">/</Typography>
                 <Box>
                   <Typography variant="h4" color="error.main">
                     {testResult.incorrectAnswers}
                   </Typography>
                   <Typography variant="body2" color="textSecondary">Incorrect</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="h4" color="warning.main">
+                    {testResult.unansweredQuestions}
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">Unanswered</Typography>
                 </Box>
               </Box>
               <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>

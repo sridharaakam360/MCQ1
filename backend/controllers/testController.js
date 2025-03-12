@@ -199,6 +199,8 @@ const submitTest = catchAsync(async (req, res) => {
         user_id, 
         degree,
         total_questions, 
+        answered_questions,
+        unanswered_questions,
         score, 
         correct_answers,
         incorrect_answers,
@@ -206,14 +208,31 @@ const submitTest = catchAsync(async (req, res) => {
         started_at,
         completed_at,
         status
-      ) VALUES (?, ?, ?, 0, 0, 0, ?, NOW(), NOW(), 'completed')`,
-      [userId, testData.degree, testData.totalQuestions, testData.timeTaken]
+      ) VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, NOW(), NOW(), 'completed')`,
+      [
+        userId, 
+        testData.degree, 
+        testData.totalQuestions,
+        testData.answeredQuestions || Object.keys(answers).length,
+        testData.unansweredQuestions || (testData.totalQuestions - Object.keys(answers).length),
+        testData.timeTaken
+      ]
     );
 
     const testId = result.insertId;
     let totalScore = 0;
     let correctAnswers = 0;
     let incorrectAnswers = 0;
+
+    // Store all question IDs that were part of this test
+    if (testData.questions && Array.isArray(testData.questions)) {
+      for (const questionId of testData.questions) {
+        await connection.query(
+          `INSERT INTO test_questions (test_result_id, question_id) VALUES (?, ?)`,
+          [testId, questionId]
+        );
+      }
+    }
 
     // Process each answer
     for (const [questionId, answer] of Object.entries(answers)) {
@@ -250,8 +269,8 @@ const submitTest = catchAsync(async (req, res) => {
     const answeredQuestions = Object.keys(answers).length;
     console.log('Questions answered:', answeredQuestions, 'Correct answers:', correctAnswers);
 
-    // Calculate percentage score based on answered questions
-    const percentageScore = (correctAnswers / answeredQuestions) * 100;
+    // Calculate percentage score based on answered questions only
+    const percentageScore = answeredQuestions > 0 ? (correctAnswers / answeredQuestions) * 100 : 0;
     console.log('Percentage score:', percentageScore);
 
     // Update test result with final score and counts
@@ -260,9 +279,17 @@ const submitTest = catchAsync(async (req, res) => {
        SET score = ?, 
            correct_answers = ?,
            incorrect_answers = ?,
-           total_questions = ?
+           answered_questions = ?,
+           unanswered_questions = ?
        WHERE id = ?`,
-      [percentageScore, correctAnswers, incorrectAnswers, answeredQuestions, testId]
+      [
+        percentageScore, 
+        correctAnswers, 
+        incorrectAnswers, 
+        answeredQuestions,
+        testData.totalQuestions - answeredQuestions,
+        testId
+      ]
     );
 
     await connection.commit();
@@ -272,7 +299,9 @@ const submitTest = catchAsync(async (req, res) => {
       data: {
         resultId: testId,
         score: percentageScore,
-        totalQuestions: answeredQuestions,
+        totalQuestions: testData.totalQuestions,
+        answeredQuestions,
+        unansweredQuestions: testData.totalQuestions - answeredQuestions,
         timeTaken: testData.timeTaken,
         correctAnswers,
         incorrectAnswers
@@ -526,6 +555,7 @@ const getTestResults = catchAsync(async (req, res) => {
 
     console.log('Fetching test results for testId:', testId, 'userId:', userId);
 
+    // Get test result details first
     const [testResult] = await db.query(`
         SELECT 
             tr.id,
@@ -535,30 +565,10 @@ const getTestResults = catchAsync(async (req, res) => {
             tr.incorrect_answers,
             tr.time_taken,
             tr.created_at,
-            tr.degree,
-            JSON_ARRAYAGG(
-                JSON_OBJECT(
-                    'questionId', q.id,
-                    'question', q.question,
-                    'options', JSON_ARRAY(
-                        q.option1,
-                        q.option2,
-                        q.option3,
-                        q.option4
-                    ),
-                    'correctOption', q.answer,
-                    'selectedOption', ta.selected_answer,
-                    'isCorrect', ta.is_correct
-                )
-            ) as questions
+            tr.degree
         FROM test_results tr
-        LEFT JOIN test_answers ta ON tr.id = ta.test_result_id
-        LEFT JOIN questions q ON ta.question_id = q.id
         WHERE tr.id = ? AND tr.user_id = ?
-        GROUP BY tr.id, tr.score, tr.total_questions, tr.correct_answers, tr.incorrect_answers, tr.time_taken, tr.created_at, tr.degree
     `, [testId, userId]);
-
-    console.log('Test result query response:', testResult);
 
     if (!testResult || testResult.length === 0) {
         console.log('No test result found for testId:', testId, 'userId:', userId);
@@ -569,10 +579,53 @@ const getTestResults = catchAsync(async (req, res) => {
     }
 
     const result = testResult[0];
-    console.log('Raw result:', result);
+    console.log('Test result:', result);
+
+    // Get all questions that were part of this test
+    const [questions] = await db.query(`
+        SELECT 
+            q.id,
+            q.question,
+            q.option1,
+            q.option2,
+            q.option3,
+            q.option4,
+            q.answer,
+            ta.selected_answer,
+            ta.is_correct
+        FROM test_questions tq
+        JOIN questions q ON q.id = tq.question_id
+        LEFT JOIN test_answers ta ON ta.question_id = q.id AND ta.test_result_id = ?
+        WHERE tq.test_result_id = ?
+    `, [testId, testId]);
+
+    console.log('Found questions:', questions.length);
     
-    // The questions are already parsed by MySQL's JSON_ARRAYAGG
-    const questions = result.questions || [];
+    // Process questions
+    const processedQuestions = questions.map(q => ({
+        questionId: q.id,
+        question: q.question,
+        options: [q.option1, q.option2, q.option3, q.option4],
+        correctOption: q.answer,
+        selectedOption: q.selected_answer || null,
+        isCorrect: Boolean(q.is_correct),
+        isUnanswered: q.selected_answer === null
+    }));
+
+    // Count questions by status
+    const questionCounts = processedQuestions.reduce((acc, q) => {
+        if (q.isUnanswered) {
+            acc.unanswered++;
+        } else if (q.isCorrect) {
+            acc.correct++;
+        } else {
+            acc.incorrect++;
+        }
+        return acc;
+    }, { correct: 0, incorrect: 0, unanswered: 0 });
+
+    console.log('Question counts:', questionCounts);
+    console.log('Total questions found:', processedQuestions.length);
 
     const response = {
         success: true,
@@ -582,16 +635,17 @@ const getTestResults = catchAsync(async (req, res) => {
                 name: result.degree
             },
             totalQuestions: result.total_questions,
-            correctAnswers: result.correct_answers,
-            incorrectAnswers: result.incorrect_answers,
+            correctAnswers: questionCounts.correct,
+            incorrectAnswers: questionCounts.incorrect,
+            unansweredQuestions: questionCounts.unanswered,
             score: parseFloat(result.score).toFixed(2),
             timeTaken: result.time_taken,
-            questions: questions,
+            questions: processedQuestions,
             submittedAt: result.created_at
         }
     };
 
-    console.log('Sending response:', response);
+    console.log('Sending response with', processedQuestions.length, 'questions');
     res.json(response);
 });
 
