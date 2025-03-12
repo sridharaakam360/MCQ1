@@ -69,11 +69,7 @@ const getAllQuestions = catchAsync(async (req, res) => {
 
 // Get questions by filters with caching
 const getQuestionsByFilters = catchAsync(async (req, res) => {
-<<<<<<< HEAD
   const { subject_id, difficulty, search } = req.query;
-=======
-  const { subject_id, year, difficulty, search } = req.query;
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const offset = (page - 1) * limit;
@@ -102,14 +98,6 @@ const getQuestionsByFilters = catchAsync(async (req, res) => {
     params.push(subject_id.split(','));
   }
 
-<<<<<<< HEAD
-=======
-  if (year) {
-    query += ' AND q.year IN (?)';
-    params.push(year.split(','));
-  }
-
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   if (difficulty) {
     query += ' AND q.degree IN (?)';
     params.push(difficulty.split(','));
@@ -149,42 +137,6 @@ const getQuestionsByFilters = catchAsync(async (req, res) => {
   res.json(result);
 });
 
-<<<<<<< HEAD
-=======
-// Get unique years with caching
-const getUniqueYears = catchAsync(async (req, res) => {
-  const cacheKey = 'questions:years';
-  const cachedYears = await cache.get(cacheKey);
-
-  if (cachedYears) {
-    return res.json(JSON.parse(cachedYears));
-  }
-
-  const [years] = await db.query(`
-    SELECT 
-      year,
-      COUNT(*) as question_count
-    FROM questions 
-    WHERE is_active = true
-    GROUP BY year 
-    ORDER BY year DESC
-  `);
-
-  const result = {
-    success: true,
-    years: years.map(row => ({
-      year: row.year,
-      questionCount: row.question_count
-    }))
-  };
-
-  // Cache for 1 hour
-  await cache.set(cacheKey, JSON.stringify(result), 3600);
-
-  res.json(result);
-});
-
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
 // Get question by ID with caching
 const getQuestionById = catchAsync(async (req, res) => {
   const { id } = req.params;
@@ -448,11 +400,7 @@ const updateQuestionsFromFile = catchAsync(async (req, res) => {
 
 // Get random questions for test with caching
 const getRandomQuestions = catchAsync(async (req, res) => {
-<<<<<<< HEAD
   const { subject_id, count = 10, difficulty } = req.query;
-=======
-  const { subject_id, count = 10, difficulty, year } = req.query;
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   
   let query = `
     SELECT 
@@ -463,10 +411,6 @@ const getRandomQuestions = catchAsync(async (req, res) => {
       q.option3,
       q.option4,
       q.answer,
-<<<<<<< HEAD
-=======
-      q.year,
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
       q.degree,
       s.name as subject_name,
       s.code as subject_code,
@@ -487,14 +431,6 @@ const getRandomQuestions = catchAsync(async (req, res) => {
     query += ' AND q.degree IN (?)';
     params.push(difficulty.split(','));
   }
-<<<<<<< HEAD
-=======
-
-  if (year) {
-    query += ' AND q.year IN (?)';
-    params.push(year.split(','));
-  }
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   
   query += ' ORDER BY RAND()';
   
@@ -524,12 +460,7 @@ const getRandomQuestions = catchAsync(async (req, res) => {
       name: q.subject_name,
       code: q.subject_code
     },
-<<<<<<< HEAD
     difficulty: q.degree
-=======
-    difficulty: q.degree,
-    year: q.year
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   }));
 
   res.json({
@@ -539,17 +470,86 @@ const getRandomQuestions = catchAsync(async (req, res) => {
   });
 });
 
+// Calculate test time based on questions
+const calculateTestTime = catchAsync(async (req, res) => {
+  const { questions } = req.body;
+
+  if (!Array.isArray(questions) && !Number.isInteger(questions)) {
+    throw new ApiError('Invalid questions parameter. Must be an array of question IDs or a number of questions.', 400);
+  }
+
+  // Simple time settings (in seconds)
+  const TIME_PER_QUESTION = 60; // 1 minute (60 seconds) per question
+  const BUFFER_PERCENTAGE = 0.10; // 10% buffer time
+  const AUTO_SUBMIT_WARNING = 30; // Show warning when 30 seconds remaining
+
+  let numberOfQuestions;
+  if (Array.isArray(questions)) {
+    numberOfQuestions = questions.length;
+    if (numberOfQuestions === 0) {
+      throw new ApiError('Questions array cannot be empty', 400);
+    }
+  } else {
+    // If just a number is provided
+    numberOfQuestions = Math.max(1, Math.min(questions, 100)); // Limit between 1 and 100 questions
+  }
+
+  // Calculate base time in seconds
+  const baseTimeSeconds = numberOfQuestions * TIME_PER_QUESTION;
+  
+  // Calculate buffer time in seconds
+  const bufferTimeSeconds = Math.ceil(baseTimeSeconds * BUFFER_PERCENTAGE);
+  
+  // Calculate total time in seconds
+  const totalTimeSeconds = baseTimeSeconds + bufferTimeSeconds;
+
+  // Convert to minutes for display
+  const baseTimeMinutes = Math.floor(baseTimeSeconds / 60);
+  const bufferTimeMinutes = Math.ceil(bufferTimeSeconds / 60);
+  const totalTimeMinutes = Math.ceil(totalTimeSeconds / 60);
+
+  console.log('Timer calculation:', {
+    numberOfQuestions,
+    baseTimeSeconds,
+    bufferTimeSeconds,
+    totalTimeSeconds,
+    baseTimeMinutes,
+    bufferTimeMinutes,
+    totalTimeMinutes
+  });
+
+  const response = {
+    success: true,
+    data: {
+      numberOfQuestions,
+      timePerQuestion: TIME_PER_QUESTION,
+      totalTimeInSeconds: totalTimeSeconds,
+      totalTimeMinutes: totalTimeMinutes,
+      bufferTimeSeconds: bufferTimeSeconds,
+      autoSubmit: {
+        enabled: true,
+        warningSeconds: AUTO_SUBMIT_WARNING
+      },
+      breakdown: {
+        baseTimeSeconds,
+        bufferTimeSeconds,
+        baseTimeMinutes,
+        bufferTimeMinutes
+      }
+    }
+  };
+
+  res.json(response);
+});
+
 // Export all functions
 module.exports = {
   getAllQuestions,
   getQuestionsByFilters,
-<<<<<<< HEAD
-=======
-  getUniqueYears,
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   getQuestionById,
   updateQuestion,
   deleteQuestion,
   updateQuestionsFromFile,
-  getRandomQuestions
+  getRandomQuestions,
+  calculateTestTime
 };

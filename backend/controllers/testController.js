@@ -21,7 +21,6 @@ const normalizeAnswer = (answer) => {
 
 // Get test questions with caching
 const getTestQuestions = catchAsync(async (req, res) => {
-<<<<<<< HEAD
   const { count = 10, subject_id, degree } = req.query;
   const userId = req.user.id;
 
@@ -57,11 +56,6 @@ const getTestQuestions = catchAsync(async (req, res) => {
     }
   }
 
-=======
-  const { count = 10, subject_id, year, degree } = req.query;
-  const userId = req.user.id;
-
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   let query = `
     SELECT 
       q.id,
@@ -86,14 +80,6 @@ const getTestQuestions = catchAsync(async (req, res) => {
     params.push(subject_id);
   }
 
-<<<<<<< HEAD
-=======
-  if (year) {
-    query += ' AND q.year = ?';
-    params.push(year);
-  }
-
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   if (degree) {
     query += ' AND q.degree = ?';
     params.push(degree);
@@ -109,7 +95,6 @@ const getTestQuestions = catchAsync(async (req, res) => {
   console.log('Query result:', questions);
 
   if (!questions.length) {
-<<<<<<< HEAD
     // Get more specific about why no questions were found
     const message = subject_id && degree 
       ? `No questions found for the selected subject in ${degree} exam type`
@@ -119,16 +104,6 @@ const getTestQuestions = catchAsync(async (req, res) => {
       success: false,
       message: message
     });
-=======
-    // Let's check if there are any questions at all for this degree
-    const [allQuestions] = await db.query(
-      'SELECT COUNT(*) as count FROM questions WHERE degree = ?',
-      [degree]
-    );
-    console.log('Total questions for degree:', degree, ':', allQuestions[0].count);
-    
-    throw new ApiError('No questions found for the selected criteria', 404);
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   }
 
   res.json({
@@ -166,20 +141,6 @@ const getTestFilters = catchAsync(async (req, res) => {
     'SELECT id, name FROM subjects WHERE is_active = 1 ORDER BY name'
   );
 
-<<<<<<< HEAD
-=======
-  // Get years with question counts
-  const [years] = await db.query(`
-    SELECT 
-      year,
-      COUNT(*) as question_count
-    FROM questions 
-    WHERE year IS NOT NULL 
-    GROUP BY year 
-    ORDER BY year DESC
-  `);
-
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   // Get degrees (exam types) with counts
   const [degrees] = await db.query(`
     SELECT 
@@ -193,10 +154,6 @@ const getTestFilters = catchAsync(async (req, res) => {
 
   // Log the results for debugging
   console.log('Subjects found:', subjects.length);
-<<<<<<< HEAD
-=======
-  console.log('Years found:', years.length);
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   console.log('Degrees found:', degrees.length);
 
   const result = {
@@ -206,19 +163,13 @@ const getTestFilters = catchAsync(async (req, res) => {
         id: s.id,
         name: s.name
       })),
-<<<<<<< HEAD
-=======
-      years: years.map(y => ({
-        year: y.year,
-        count: y.question_count
-      })),
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
       exams: degrees.map(d => ({
         name: d.degree,
         count: d.question_count
       }))
     }
   };
+
 
   // Cache for 1 hour
   await cache.set(cacheKey, JSON.stringify(result), 3600);

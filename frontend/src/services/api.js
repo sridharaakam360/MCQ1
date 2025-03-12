@@ -67,7 +67,8 @@ const apiService = {
     getResults: (id) => api.get(`/tests/results/${id}`),
     getFilters: () => api.get('/tests/filters'),
     getHistory: (userId) => api.get(`/tests/history${userId ? `/${userId}` : ''}`),
-    getStats: () => api.get('/tests/stats')
+    getStats: () => api.get('/tests/stats'),
+    calculateTime: (data) => api.post('/questions/calculate-time', data)
   },
   admin: {
     getUsers: (params) => api.get('/admin/users', { params }),

@@ -31,21 +31,68 @@ const TestTaking = ({ questions, onComplete, subjectId, examType }) => {
   const theme = useTheme();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(3600); // 1 hour in seconds
+  const [timeLeft, setTimeLeft] = useState(0);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
     severity: 'info'
   });
   const [unansweredQuestions, setUnansweredQuestions] = useState([]);
+  const [warningShown, setWarningShown] = useState(false);
 
+  // Initialize timer from backend calculation
   useEffect(() => {
-    console.log('TestTaking received questions:', questions);
-    console.log('Current question:', questions[currentQuestion]);
+    const initializeTimer = async () => {
+      try {
+        // Get timer calculation from backend
+        const response = await apiService.test.calculateTime({
+          questions: questions.length // Just send number of questions
+        });
+
+        if (response?.data?.success) {
+          const { totalTimeInSeconds } = response.data.data;
+          setTimeLeft(totalTimeInSeconds);
+          console.log('Timer initialized with:', {
+            totalTimeInSeconds,
+            numQuestions: questions.length,
+            breakdown: response.data.data.breakdown
+          });
+        } else {
+          throw new Error(response?.data?.message || 'Failed to calculate test time');
+        }
+      } catch (err) {
+        console.error('Error initializing timer:', err);
+        const errorMessage = err.response?.data?.message || err.message;
+        setError(`Failed to initialize test timer: ${errorMessage}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (questions && questions.length > 0) {
+      initializeTimer();
+    }
+  }, [questions]);
+
+  // Timer countdown effect
+  useEffect(() => {
+    if (timeLeft <= 0 || loading) return;
+
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
+        // Show warning when 30 seconds remaining
+        if (prev === 30 && !warningShown) {
+          setWarningShown(true);
+          setSnackbar({
+            open: true,
+            message: 'Warning: 30 seconds remaining! Test will be auto-submitted.',
+            severity: 'warning'
+          });
+        }
+        
+        // Auto-submit when timer reaches 0
         if (prev <= 1) {
           clearInterval(timer);
           handleSubmit();
@@ -56,7 +103,7 @@ const TestTaking = ({ questions, onComplete, subjectId, examType }) => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [timeLeft, loading, warningShown]);
 
   const handleAnswerChange = (event) => {
     setAnswers(prev => ({
@@ -112,32 +159,47 @@ const TestTaking = ({ questions, onComplete, subjectId, examType }) => {
         formattedAnswers[questionId] = answerLetter;
       });
 
+      // Calculate actual time taken in seconds
+      const response = await apiService.test.calculateTime({
+        questions: questions.length
+      });
+      const totalAllowedTime = response.data.data.totalTimeInSeconds;
+      const timeTakenInSeconds = totalAllowedTime - timeLeft;
+
       // Prepare test data
       const testData = {
         testData: {
           degree: examType,
           totalQuestions: questions.length,
-          timeTaken: 3600 - timeLeft
+          timeTaken: timeTakenInSeconds // Send time taken in seconds
         },
         answers: formattedAnswers
       };
 
-      console.log('Submitting test data:', testData);
+      console.log('Submitting test data:', {
+        ...testData,
+        timeDetails: {
+          totalAllowedTime,
+          timeLeft,
+          timeTakenInSeconds,
+          timeTakenFormatted: `${Math.floor(timeTakenInSeconds / 60)}:${(timeTakenInSeconds % 60).toString().padStart(2, '0')}`
+        }
+      });
 
-      const response = await apiService.test.submit(testData);
-      console.log('Test submission response:', response);
+      const submitResponse = await apiService.test.submit(testData);
+      console.log('Test submission response:', submitResponse);
 
-      if (response?.data?.success) {
+      if (submitResponse?.data?.success) {
         setUnansweredQuestions([]);
-        console.log('Test submitted successfully, calling onComplete with:', response.data.data);
+        console.log('Test submitted successfully, calling onComplete with:', submitResponse.data.data);
         setSnackbar({
           open: true,
           message: 'Test submitted successfully',
           severity: 'success'
         });
-        onComplete(response.data.data);
+        onComplete(submitResponse.data.data);
       } else {
-        throw new Error(response?.data?.message || 'Failed to submit test');
+        throw new Error(submitResponse?.data?.message || 'Failed to submit test');
       }
     } catch (err) {
       console.error('Error submitting test:', err);

@@ -39,19 +39,10 @@ const MCQTest = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const [filters, setFilters] = useState({
     exams: [],
-<<<<<<< HEAD
     subjects: []
   });
   const [selectedExam, setSelectedExam] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
-=======
-    subjects: [],
-    years: []
-  });
-  const [selectedExam, setSelectedExam] = useState('');
-  const [selectedSubject, setSelectedSubject] = useState('');
-  const [selectedYear, setSelectedYear] = useState('');
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
   const [testStarted, setTestStarted] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
@@ -73,18 +64,10 @@ const MCQTest = () => {
         const exams = Array.isArray(rawData.exams) ? rawData.exams : 
                      Array.isArray(rawData.degrees) ? rawData.degrees : [];
         const subjects = Array.isArray(rawData.subjects) ? rawData.subjects : [];
-<<<<<<< HEAD
-=======
-        const years = Array.isArray(rawData.years) ? rawData.years : [];
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
         
         // Log each filter type
         console.log('Processed exam types:', exams);
         console.log('Processed subjects:', subjects);
-<<<<<<< HEAD
-=======
-        console.log('Processed years:', years);
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
 
         if (exams.length === 0) {
           console.warn('No exam types found in the response');
@@ -93,12 +76,7 @@ const MCQTest = () => {
 
         setFilters({
           exams,
-<<<<<<< HEAD
           subjects
-=======
-          subjects,
-          years
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
         });
       } else {
         console.error('Failed to fetch filters:', {
@@ -107,11 +85,7 @@ const MCQTest = () => {
           data: response?.data?.data
         });
         setError('Failed to load filters: ' + (response?.data?.message || 'Unknown error'));
-<<<<<<< HEAD
         setFilters({ exams: [], subjects: [] });
-=======
-        setFilters({ exams: [], subjects: [], years: [] });
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
       }
     } catch (error) {
       console.error('Error fetching filters:', {
@@ -120,11 +94,7 @@ const MCQTest = () => {
         status: error.response?.status
       });
       setError('Failed to load filters. Please try again later. Error: ' + (error.message || 'Unknown error'));
-<<<<<<< HEAD
       setFilters({ exams: [], subjects: [] });
-=======
-      setFilters({ exams: [], subjects: [], years: [] });
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
     } finally {
       setLoading(false);
     }
@@ -136,13 +106,7 @@ const MCQTest = () => {
       exams: filters.exams,
       examCount: filters.exams.length,
       subjects: filters.subjects,
-<<<<<<< HEAD
       subjectCount: filters.subjects.length
-=======
-      subjectCount: filters.subjects.length,
-      years: filters.years,
-      yearCount: filters.years.length
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
     });
   }, [filters]);
 
@@ -161,23 +125,13 @@ const MCQTest = () => {
       console.log('Fetching questions with params:', {
         count: 10,
         degree: selectedExam,
-<<<<<<< HEAD
         subject_id: selectedSubject || undefined
-=======
-        subject_id: selectedSubject || undefined,
-        year: selectedYear || undefined
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
       });
 
       const response = await apiService.test.getQuestions({
         count: 10,
         degree: selectedExam,
-<<<<<<< HEAD
         subject_id: selectedSubject || undefined
-=======
-        subject_id: selectedSubject || undefined,
-        year: selectedYear || undefined
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
       });
       
       console.log('Questions API response:', response);
@@ -227,22 +181,14 @@ const MCQTest = () => {
       }
     } catch (err) {
       console.error('Error fetching questions:', err);
-<<<<<<< HEAD
       // Get the specific error message from the API response if available
       const errorMessage = err.response?.data?.message || 'Failed to fetch questions. Please try again.';
       setError(errorMessage);
-=======
-      setError('Failed to fetch questions. Please try again.');
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
       setQuestions([]);
     } finally {
       setLoading(false);
     }
-<<<<<<< HEAD
   }, [selectedExam, selectedSubject]);
-=======
-  }, [selectedExam, selectedSubject, selectedYear]);
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
 
   useEffect(() => {
     fetchFilters();
@@ -353,12 +299,7 @@ const MCQTest = () => {
                     <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
                       <li>Try selecting a different exam type</li>
                       <li>Try selecting a different subject</li>
-<<<<<<< HEAD
                       <li>If the problem persists, contact the administrator</li>
-=======
-                      <li>Clear the year filter to see more questions</li>
-                      <li>If the problem persists, try again later</li>
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
                     </ul>
                   </Box>
                 )}
@@ -400,35 +341,12 @@ const MCQTest = () => {
                 </Select>
               </FormControl>
 
-<<<<<<< HEAD
-=======
-              <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel>Year</InputLabel>
-                <Select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  label="Year"
-                >
-                  <MenuItem value="">All Years</MenuItem>
-                  {(filters.years || []).map((year) => (
-                    <MenuItem key={year} value={year}>
-                      {year}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
               <Button
                 variant="contained"
                 onClick={() => {
                   setError('');
                   setSelectedExam('');
                   setSelectedSubject('');
-<<<<<<< HEAD
-=======
-                  setSelectedYear('');
->>>>>>> 486250f304fba193f3b11edefa2257fe404d5f98
                   fetchQuestions();
                 }}
                 sx={{ mb: 2 }}
