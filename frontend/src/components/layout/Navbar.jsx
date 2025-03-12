@@ -319,7 +319,7 @@ const Navbar = () => {
                 </IconButton>
               </Tooltip>
 
-              <Tooltip title={user?.name || user?.email || 'Profile'}>
+              <Tooltip title={user?.username || user?.email || 'Profile'}>
                 <IconButton
                   edge="end"
                   onClick={handleProfileMenuOpen}
@@ -332,7 +332,7 @@ const Navbar = () => {
                       bgcolor: isConnected ? 'success.main' : 'error.main'
                     }}
                   >
-                    {safeFirstChar(user?.name) || safeFirstChar(user?.email) || 'U'}
+                    {safeFirstChar(user?.username) || safeFirstChar(user?.email) || 'U'}
                   </Avatar>
                 </IconButton>
               </Tooltip>

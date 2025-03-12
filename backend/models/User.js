@@ -147,6 +147,10 @@ class User {
 
   static async findById(id) {
     try {
+      if (!id) {
+        throw new ApiError('User ID is required', 400);
+      }
+
       const [rows] = await db.query(
         `SELECT 
           id,
@@ -168,13 +172,13 @@ class User {
         [id]
       );
 
-      if (!rows[0]) {
+      if (!rows || rows.length === 0) {
         throw new ApiError('User not found', 404);
       }
 
       return rows[0];
     } catch (error) {
-      logger.error('Error finding user by ID:', error);
+      logger.error(`Error finding user by ID ${id}:`, error);
       if (error instanceof ApiError) throw error;
       throw new ApiError('Failed to find user', 500);
     }

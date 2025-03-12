@@ -189,12 +189,26 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const updateUser = (data) => {
-    setUser(prev => {
-      const updated = { ...prev, ...data };
-      localStorage.setItem('user', JSON.stringify(updated));
-      return updated;
-    });
+  const updateUser = async (data) => {
+    try {
+      setLoading(true);
+      setError(null);
+      // Make API call to update user in database
+      const response = await apiService.user.updateProfile(data);
+      if (response?.data?.success) {
+        // Update local state and storage only after successful API update
+        const updatedUser = response.data.user;
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        return { success: true };
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to update profile. Please try again.';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const forgotPassword = async (email) => {

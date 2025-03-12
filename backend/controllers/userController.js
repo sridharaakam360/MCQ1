@@ -179,41 +179,53 @@ const deleteUser = catchAsync(async (req, res) => {
 
 // Get user profile
 const getProfile = catchAsync(async (req, res) => {
-  const user = await User.findById(req.user.id).select('-password');
-  if (!user) {
-    throw new ApiError('User not found', 404);
+  if (!req.user || !req.user.id) {
+    throw new ApiError('User not authenticated', 401);
   }
+
+  const user = await User.findById(req.user.id);
+  // Remove sensitive data
+  delete user.password;
+  
   res.json({ success: true, data: user });
 });
 
 // Update user profile
 const updateProfile = catchAsync(async (req, res) => {
-  const { name, email } = req.body;
-  const user = await User.findById(req.user.id);
-
-  if (!user) {
-    throw new ApiError('User not found', 404);
+  if (!req.user || !req.user.id) {
+    throw new ApiError('User not authenticated', 401);
   }
 
+  const { username, email, first_name, last_name, phone_number, bio } = req.body;
+  const user = await User.findById(req.user.id);
+
   if (email && email !== user.email) {
-    const emailExists = await User.findOne({ email });
+    const emailExists = await User.findByEmail(email);
     if (emailExists) {
       throw new ApiError('Email already in use', 400);
     }
   }
 
-  user.name = name || user.name;
-  user.email = email || user.email;
-
-  const updatedUser = await user.save();
-  res.json({
-    success: true,
-    data: {
-      _id: updatedUser._id,
-      name: updatedUser.name,
-      email: updatedUser.email,
-      role: updatedUser.role
+  if (username && username !== user.username) {
+    const usernameExists = await User.findByUsername(username);
+    if (usernameExists) {
+      throw new ApiError('Username already in use', 400);
     }
+  }
+
+  const updatedUser = await User.updateUser(req.user.id, {
+    username,
+    email,
+    first_name,
+    last_name,
+    phone_number,
+    bio
+  });
+
+  res.json({ 
+    success: true, 
+    message: 'Profile updated successfully',
+    user: updatedUser 
   });
 });
 
