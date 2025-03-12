@@ -3,7 +3,7 @@ const logger = require('../config/logger');
 const { validateUsername, validateEmail, validatePhone, sanitizeUser } = require('../utils/validation');
 const { ApiError } = require('../utils/errors');
 const { catchAsync } = require('../utils/errors');
-const User = require('../models/user');
+const User = require('../models/User');
 const UserPerformance = require('../models/UserPerformance');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -192,41 +192,97 @@ const getProfile = catchAsync(async (req, res) => {
 
 // Update user profile
 const updateProfile = catchAsync(async (req, res) => {
-  if (!req.user || !req.user.id) {
-    throw new ApiError('User not authenticated', 401);
-  }
-
   const { username, email, first_name, last_name, phone_number, bio } = req.body;
-  const user = await User.findById(req.user.id);
+  const userId = req.user.id;
 
-  if (email && email !== user.email) {
-    const emailExists = await User.findByEmail(email);
-    if (emailExists) {
-      throw new ApiError('Email already in use', 400);
+  try {
+    // Input validation
+    if (!username || !email || !first_name || !last_name) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Required fields missing' 
+      });
     }
-  }
 
-  if (username && username !== user.username) {
-    const usernameExists = await User.findByUsername(username);
-    if (usernameExists) {
-      throw new ApiError('Username already in use', 400);
+    // Check if username is taken (excluding current user)
+    const usernameExists = await db.query(
+      'SELECT id FROM users WHERE username = ? AND id != ?',
+      [username, userId]
+    );
+
+    if (usernameExists[0].length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username is already taken'
+      });
     }
+
+    // Check if email is taken (excluding current user)
+    const emailExists = await db.query(
+      'SELECT id FROM users WHERE email = ? AND id != ?',
+      [email, userId]
+    );
+
+    if (emailExists[0].length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already taken'
+      });
+    }
+
+    // Update user profile
+    const [result] = await db.query(
+      `UPDATE users 
+       SET username = ?, 
+           email = ?, 
+           first_name = ?, 
+           last_name = ?, 
+           phone_number = ?, 
+           bio = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [username, email, first_name, last_name, phone_number || null, bio || null, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get updated user data
+    const [updatedUser] = await db.query(
+      `SELECT id, username, email, first_name, last_name, phone_number, bio, 
+              created_at, updated_at, is_admin, is_verified, is_active 
+       FROM users 
+       WHERE id = ?`,
+      [userId]
+    );
+
+    if (updatedUser.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Failed to retrieve updated user data'
+      });
+    }
+
+    // Remove sensitive data
+    delete updatedUser[0].password;
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: updatedUser[0]
+    });
+
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
   }
-
-  const updatedUser = await User.updateUser(req.user.id, {
-    username,
-    email,
-    first_name,
-    last_name,
-    phone_number,
-    bio
-  });
-
-  res.json({ 
-    success: true, 
-    message: 'Profile updated successfully',
-    user: updatedUser 
-  });
 });
 
 // Get user test history
@@ -380,44 +436,20 @@ const updateSettings = catchAsync(async (req, res) => {
   };
 
   if (typeof value !== settingTypes[dbSetting]) {
-    throw new ApiError(`Invalid value type for ${setting}`, 400);
+    throw new ApiError(`Invalid value type for setting ${setting}`, 400);
   }
 
-  // Upsert settings
+  // Update user settings
   await db.query(`
-    INSERT INTO user_settings (
-      user_id, 
-      ${dbSetting}, 
-      updated_at
-    ) 
-    VALUES (?, ?, CURRENT_TIMESTAMP)
-    ON DUPLICATE KEY UPDATE 
-      ${dbSetting} = VALUES(${dbSetting}),
-      updated_at = VALUES(updated_at)
-  `, [req.user.id, value]);
-
-  logger.info('User settings updated', {
-    userId: req.user.id,
-    setting,
-    value
-  });
-
-  // Get updated settings
-  const [settings] = await db.query(
-    'SELECT * FROM user_settings WHERE user_id = ?',
-    [req.user.id]
-  );
+    UPDATE user_settings 
+    SET 
+      ${dbSetting} = ?
+    WHERE user_id = ?
+  `, [value, req.user.id]);
 
   res.json({
     success: true,
-    settings: {
-      emailNotifications: settings[0].email_notifications,
-      darkMode: settings[0].dark_mode,
-      showProgress: settings[0].show_progress,
-      autoSaveAnswers: settings[0].auto_save_answers,
-      language: settings[0].language,
-      timezone: settings[0].timezone
-    }
+    message: 'User settings updated successfully'
   });
 });
 
@@ -535,25 +567,6 @@ const getPerformanceHistory = catchAsync(async (req, res) => {
   }
 });
 
-// Delete user account
-const deleteAccount = catchAsync(async (req, res) => {
-  const user = await User.findById(req.user.id);
-  if (!user) {
-    throw new ApiError('User not found', 404);
-  }
-
-  // Delete user's performance records
-  await UserPerformance.deleteMany({ user: req.user.id });
-  
-  // Delete user
-  await user.remove();
-
-  res.json({ 
-    success: true, 
-    message: 'Account deleted successfully' 
-  });
-});
-
 // Get user performance details for a specific test
 const getTestPerformance = catchAsync(async (req, res) => {
   try {
@@ -599,7 +612,56 @@ const getTestPerformance = catchAsync(async (req, res) => {
   }
 });
 
-// Export the functions
+// Delete user account
+const deleteAccount = catchAsync(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    throw new ApiError('User not authenticated', 401);
+  }
+
+  // Start transaction
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
+
+  try {
+    // Delete user's test results and answers
+    await connection.query(
+      'DELETE FROM test_answers WHERE test_result_id IN (SELECT id FROM test_results WHERE user_id = ?)',
+      [req.user.id]
+    );
+    
+    await connection.query(
+      'DELETE FROM test_results WHERE user_id = ?',
+      [req.user.id]
+    );
+
+    // Delete user's settings
+    await connection.query(
+      'DELETE FROM user_settings WHERE user_id = ?',
+      [req.user.id]
+    );
+
+    // Finally, delete the user
+    await connection.query(
+      'DELETE FROM users WHERE id = ?',
+      [req.user.id]
+    );
+
+    await connection.commit();
+
+    res.json({ 
+      success: true, 
+      message: 'Account deleted successfully' 
+    });
+  } catch (error) {
+    await connection.rollback();
+    logger.error('Error deleting account:', error);
+    throw new ApiError('Failed to delete account', 500);
+  } finally {
+    connection.release();
+  }
+});
+
+// Export all functions
 module.exports = { 
   getAllUsers, 
   getUserById, 

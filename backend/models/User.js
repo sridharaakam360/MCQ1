@@ -23,7 +23,7 @@ class User {
     }
   }
 
-  static async createUser({ username, password, email, firstName, lastName, isAdmin = false }) {
+  static async createUser({ username, password, email, first_name, last_name, phone_number = null, bio = null, profile_image = null, isAdmin = false }) {
     try {
       const [result] = await db.query(
         `INSERT INTO users (
@@ -32,12 +32,15 @@ class User {
           email, 
           first_name,
           last_name,
+          phone_number,
+          bio,
+          profile_image,
           is_admin,
           is_verified,
           is_active,
           created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, false, true, CURRENT_TIMESTAMP)`,
-        [username, password, email, firstName, lastName, isAdmin]
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, false, true, CURRENT_TIMESTAMP)`,
+        [username, password, email, first_name, last_name, phone_number, bio, profile_image, isAdmin]
       );
       return result.insertId;
     } catch (error) {
@@ -91,7 +94,29 @@ class User {
         throw new ApiError('User not found', 404);
       }
 
-      return true;
+      // Fetch and return the updated user
+      const [updatedUser] = await db.query(
+        `SELECT 
+          id,
+          username,
+          email,
+          first_name,
+          last_name,
+          phone_number,
+          bio,
+          profile_image,
+          is_admin,
+          is_verified,
+          is_active,
+          created_at,
+          updated_at,
+          last_login
+        FROM users 
+        WHERE id = ?`,
+        [id]
+      );
+
+      return updatedUser[0];
     } catch (error) {
       logger.error('Error updating user:', error);
       if (error instanceof ApiError) throw error;

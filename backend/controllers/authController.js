@@ -82,11 +82,11 @@ const signIn = async (req, res, next) => {
 // Sign Up Function
 const signUp = async (req, res, next) => {
   try {
-    const { email, password, fullName } = req.body;
+    const { email, password, first_name, last_name, username } = req.body;
 
     // Input validation
-    if (!email || !password || !fullName) {
-      throw new ApiError('Email, password and full name are required', 400);
+    if (!email || !password || !first_name || !last_name || !username) {
+      throw new ApiError('Email, password, username, first name and last name are required', 400);
     }
 
     // Validate password strength
@@ -95,15 +95,26 @@ const signUp = async (req, res, next) => {
       throw new ApiError(passwordValidation.message, 400);
     }
 
-    // Check for existing user with detailed error messages
-    const [existingUsers] = await db.query(
+    // Check for existing email
+    const [existingEmails] = await db.query(
       'SELECT email FROM users WHERE email = ?',
       [email.toLowerCase()]
     );
 
-    if (existingUsers.length > 0) {
+    if (existingEmails.length > 0) {
       logger.warn('Registration attempt with existing email', { email });
       throw new ApiError('An account with this email already exists. Please try signing in or use a different email address.', 400);
+    }
+
+    // Check for existing username
+    const [existingUsernames] = await db.query(
+      'SELECT username FROM users WHERE username = ?',
+      [username.toLowerCase()]
+    );
+
+    if (existingUsernames.length > 0) {
+      logger.warn('Registration attempt with existing username', { username });
+      throw new ApiError('This username is already taken. Please choose a different one.', 400);
     }
 
     // Hash password
@@ -112,24 +123,29 @@ const signUp = async (req, res, next) => {
     // Create user
     const [result] = await db.query(
       `INSERT INTO users (
+        username,
         email,
         password,
-        full_name,
+        first_name,
+        last_name,
         role,
         status,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, 'user', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      ) VALUES (?, ?, ?, ?, ?, 'user', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       [
+        username.toLowerCase(),
         email.toLowerCase(),
         hashedPassword,
-        fullName
+        first_name,
+        last_name
       ]
     );
 
     logger.info('User registered successfully', {
       userId: result.insertId,
-      email
+      email,
+      username
     });
 
     res.status(201).json({
@@ -137,8 +153,10 @@ const signUp = async (req, res, next) => {
       message: 'Registration successful. Please sign in.',
       user: {
         id: result.insertId,
+        username,
         email,
-        fullName,
+        first_name,
+        last_name,
         role: 'user',
         status: 'active'
       }
@@ -148,7 +166,8 @@ const signUp = async (req, res, next) => {
     logger.error('Registration error:', {
       error: error.message,
       stack: error.stack,
-      email: req.body?.email
+      email: req.body?.email,
+      username: req.body?.username
     });
     
     // Pass the error to the error handling middleware

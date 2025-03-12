@@ -157,23 +157,17 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
-      setLoading(true);
-      setError(null);
-      const response = await apiService.auth.register(userData);
-      const { token, refreshToken, user: newUser } = response.data;
-      
-      localStorage.setItem('token', token);
-      localStorage.setItem('refreshToken', refreshToken);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      
-      setUser(newUser);
-      return { success: true, user: newUser };
+      const response = await apiService.auth.register({
+        email: userData.email,
+        password: userData.password,
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        username: userData.username
+      });
+
+      return response.data;
     } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Registration failed. Please try again.';
-      setError(errorMessage);
-      throw new Error(errorMessage);
-    } finally {
-      setLoading(false);
+      throw error;
     }
   };
 
@@ -201,9 +195,11 @@ export const AuthProvider = ({ children }) => {
         setUser(updatedUser);
         localStorage.setItem('user', JSON.stringify(updatedUser));
         return { success: true };
+      } else {
+        throw new Error(response?.data?.message || 'Failed to update profile');
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Failed to update profile. Please try again.';
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to update profile. Please try again.';
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {
