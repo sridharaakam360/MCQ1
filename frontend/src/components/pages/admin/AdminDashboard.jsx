@@ -15,7 +15,9 @@ import {
   ListItemAvatar,
   Avatar,
   Divider,
-  Button
+  Button,
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import {
   People as PeopleIcon,
@@ -23,7 +25,8 @@ import {
   TrendingUp as TrendingUpIcon,
   PersonAdd as PersonAddIcon,
   Upload as UploadIcon,
-  Settings as SettingsIcon
+  Refresh as RefreshIcon,
+  Dashboard as DashboardIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -35,6 +38,7 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [dashboardData, setDashboardData] = useState({
     stats: {
       totalUsers: 0,
@@ -46,29 +50,74 @@ const AdminDashboard = () => {
     subjectStats: []
   });
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  // Function to handle common error scenarios
+  const handleError = (err) => {
+    console.error('Dashboard error:', err);
+    let errorMessage = 'Failed to load dashboard data';
+    let shouldRedirect = false;
+    let redirectPath = '';
 
-        const response = await apiService.admin.getDashboardStats();
-
-        if (!response?.data?.success) {
-          throw new Error('Failed to fetch dashboard data');
-        }
-
-        setDashboardData(response.data.data);
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError(err.message || 'Failed to load dashboard data');
-      } finally {
-        setLoading(false);
+    if (err.response) {
+      switch (err.response.status) {
+        case 401:
+          errorMessage = 'Your session has expired. Please log in again.';
+          shouldRedirect = true;
+          redirectPath = '/login';
+          break;
+        case 403:
+          errorMessage = 'You do not have permission to access the admin dashboard.';
+          shouldRedirect = true;
+          redirectPath = '/dashboard';
+          break;
+        case 404:
+          errorMessage = 'Dashboard data not found.';
+          break;
+        case 500:
+          errorMessage = 'Server error. Please try again later.';
+          break;
+        default:
+          errorMessage = err.response.data?.message || errorMessage;
       }
-    };
+    }
 
+    setError(errorMessage);
+
+    if (shouldRedirect) {
+      setTimeout(() => {
+        navigate(redirectPath, { 
+          state: { message: errorMessage }
+        });
+      }, 2000);
+    }
+  };
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await apiService.admin.getDashboardStats();
+      
+      if (response?.data?.success) {
+        setDashboardData(response.data.data);
+      } else {
+        throw new Error(response?.data?.message || 'Failed to fetch dashboard data');
+      }
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError(err.message || 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  const handleRefresh = () => {
+    fetchDashboardData();
+  };
 
   if (loading) {
     return (
@@ -81,7 +130,16 @@ const AdminDashboard = () => {
   if (error) {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Alert severity="error">{error}</Alert>
+        <Alert 
+          severity="error" 
+          action={
+            <Button color="inherit" size="small" onClick={handleRefresh}>
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
       </Container>
     );
   }
@@ -95,116 +153,131 @@ const AdminDashboard = () => {
     {
       title: 'Upload Questions',
       icon: <UploadIcon />,
-      onClick: () => navigate('/admin/questions/upload')
+      onClick: () => navigate('/admin/upload-questions')
     },
     {
       title: 'View Users',
       icon: <PeopleIcon />,
       onClick: () => navigate('/admin/users')
+    },
+    {
+      title: 'View Analytics',
+      icon: <AssessmentIcon />,
+      onClick: () => navigate('/admin/stats')
     }
   ];
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1" gutterBottom>
+          Admin Dashboard
+        </Typography>
+        <Tooltip title="Refresh Data">
+          <IconButton onClick={handleRefresh} color="primary">
+            <RefreshIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
       <MotionPaper
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
+        elevation={3}
+        sx={{ p: 3, mb: 4 }}
       >
-        <Box sx={{ p: 3 }}>
-          <Typography variant="h4" gutterBottom>
-            Admin Dashboard
-          </Typography>
-
-          {/* Quick Stats */}
-          <Grid container spacing={3} sx={{ mb: 4 }}>
-            <Grid item xs={12} sm={6} md={3}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <PeopleIcon color="primary" sx={{ mr: 1 }} />
-                    <Typography variant="h6">Total Users</Typography>
-                  </Box>
-                  <Typography variant="h4">
-                    {dashboardData.stats?.totalUsers || 0}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <AssessmentIcon color="primary" sx={{ mr: 1 }} />
-                    <Typography variant="h6">Total Tests</Typography>
-                  </Box>
-                  <Typography variant="h4">
-                    {dashboardData.stats?.totalTests || 0}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <TrendingUpIcon color="primary" sx={{ mr: 1 }} />
-                    <Typography variant="h6">Average Score</Typography>
-                  </Box>
-                  <Typography variant="h4">
-                    {dashboardData.stats?.averageScore || 0}%
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <PeopleIcon color="primary" sx={{ mr: 1 }} />
-                    <Typography variant="h6">Active Users</Typography>
-                  </Box>
-                  <Typography variant="h4">
-                    {dashboardData.stats?.activeUsers || 0}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
+        {/* Quick Stats */}
+        <Typography variant="h6" gutterBottom>
+          Overview
+        </Typography>
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid item xs={12} sm={6} md={3}>
+            <Card sx={{ height: '100%' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <PeopleIcon color="primary" sx={{ mr: 1 }} />
+                  <Typography variant="h6">Total Users</Typography>
+                </Box>
+                <Typography variant="h4">
+                  {dashboardData.stats?.totalUsers || 0}
+                </Typography>
+              </CardContent>
+            </Card>
           </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Card sx={{ height: '100%' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <AssessmentIcon color="primary" sx={{ mr: 1 }} />
+                  <Typography variant="h6">Total Tests</Typography>
+                </Box>
+                <Typography variant="h4">
+                  {dashboardData.stats?.totalTests || 0}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Card sx={{ height: '100%' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <TrendingUpIcon color="primary" sx={{ mr: 1 }} />
+                  <Typography variant="h6">Average Score</Typography>
+                </Box>
+                <Typography variant="h4">
+                  {dashboardData.stats?.averageScore || 0}%
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Card sx={{ height: '100%' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <PeopleIcon color="primary" sx={{ mr: 1 }} />
+                  <Typography variant="h6">Active Users</Typography>
+                </Box>
+                <Typography variant="h4">
+                  {dashboardData.stats?.activeUsers || 0}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
 
-          {/* Quick Actions */}
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="h6" gutterBottom>
-              Quick Actions
-            </Typography>
-            <Grid container spacing={2}>
-              {quickActions.map((action) => (
-                <Grid item xs={12} sm={4} key={action.title}>
-                  <Button
-                    variant="outlined"
-                    startIcon={action.icon}
-                    onClick={action.onClick}
-                    fullWidth
-                  >
-                    {action.title}
-                  </Button>
-                </Grid>
-              ))}
+        {/* Quick Actions */}
+        <Typography variant="h6" gutterBottom>
+          Quick Actions
+        </Typography>
+        <Grid container spacing={2} sx={{ mb: 4 }}>
+          {quickActions.map((action) => (
+            <Grid item xs={12} sm={4} key={action.title}>
+              <Button
+                variant="outlined"
+                startIcon={action.icon}
+                onClick={action.onClick}
+                fullWidth
+                sx={{ py: 1.5 }}
+              >
+                {action.title}
+              </Button>
             </Grid>
-          </Box>
+          ))}
+        </Grid>
 
-          {/* Recent Users and Test Statistics */}
-          <Grid container spacing={3}>
-            {/* Recent Users */}
-            <Grid item xs={12} md={6}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Recent Users
-                  </Typography>
-                  <List>
-                    {dashboardData.recentUsers?.map((user, index) => (
-                      <React.Fragment key={user.id}>
+        {/* Recent Users */}
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Recent Users
+                </Typography>
+                <List>
+                  {dashboardData.recentUsers?.length > 0 ? (
+                    dashboardData.recentUsers.map((user, index) => (
+                      <React.Fragment key={user.id || index}>
                         <ListItem>
                           <ListItemAvatar>
                             <Avatar>{user.first_name?.[0] || user.email?.[0] || 'U'}</Avatar>
@@ -216,63 +289,29 @@ const AdminDashboard = () => {
                         </ListItem>
                         {index < (dashboardData.recentUsers?.length || 0) - 1 && <Divider />}
                       </React.Fragment>
-                    ))}
-                    {(!dashboardData.recentUsers || dashboardData.recentUsers.length === 0) && (
-                      <ListItem>
-                        <ListItemText
-                          primary="No recent users"
-                          secondary="New user data will appear here"
-                        />
-                      </ListItem>
-                    )}
-                  </List>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Test Statistics */}
-            <Grid item xs={12} md={6}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Test Statistics by Subject
-                  </Typography>
-                  <List>
-                    {dashboardData.subjectStats?.map((stat, index) => (
-                      <React.Fragment key={stat.subject}>
-                        <ListItem>
-                          <ListItemText
-                            primary={stat.subject}
-                            secondary={
-                              <>
-                                <Typography component="span" variant="body2">
-                                  Total Tests: {stat.totalTests || 0}
-                                </Typography>
-                                <br />
-                                <Typography component="span" variant="body2">
-                                  Average Score: {stat.averageScore || 0}%
-                                </Typography>
-                              </>
-                            }
-                          />
-                        </ListItem>
-                        {index < (dashboardData.subjectStats?.length || 0) - 1 && <Divider />}
-                      </React.Fragment>
-                    ))}
-                    {(!dashboardData.subjectStats || dashboardData.subjectStats.length === 0) && (
-                      <ListItem>
-                        <ListItemText
-                          primary="No test statistics available"
-                          secondary="Test data will appear here once users start taking tests"
-                        />
-                      </ListItem>
-                    )}
-                  </List>
-                </CardContent>
-              </Card>
-            </Grid>
+                    ))
+                  ) : (
+                    <ListItem>
+                      <ListItemText
+                        primary="No recent users"
+                        secondary="New user data will appear here"
+                      />
+                    </ListItem>
+                  )}
+                </List>
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button 
+                    variant="text" 
+                    onClick={() => navigate('/admin/users')}
+                    endIcon={<PeopleIcon />}
+                  >
+                    View All Users
+                  </Button>
+                </Box>
+              </CardContent>
+            </Card>
           </Grid>
-        </Box>
+        </Grid>
       </MotionPaper>
     </Container>
   );

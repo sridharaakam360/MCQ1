@@ -256,14 +256,11 @@ const getAnalytics = catchAsync(async (req, res) => {
   if (type === 'all' || type === 'tests') {
     queries.push(db.query(`
       SELECT 
-        DATE(created_at) as date,
         COUNT(*) as total_tests,
-        ROUND(AVG(score), 2) as avg_score,
-        COUNT(DISTINCT user_id) as unique_users
+        COUNT(DISTINCT user_id) as unique_users,
+        ROUND(AVG(score), 2) as avg_score
       FROM test_results
       WHERE created_at >= DATE_SUB(NOW(), ${timeRange})
-      GROUP BY DATE(created_at)
-      ORDER BY date
     `));
   }
 
@@ -282,21 +279,34 @@ const getAnalytics = catchAsync(async (req, res) => {
     `));
   }
 
-  const results = await Promise.all(queries);
-  const analytics = {};
+// Add test completion stats query
+if (type === 'all' || type === 'completion') {
+  queries.push(db.query(`
+    SELECT 
+      COUNT(*) as completed_tests,
+      COUNT(DISTINCT user_id) as users_completed
+    FROM test_results
+    WHERE status = 'completed' AND created_at >= DATE_SUB(NOW(), ${timeRange})
+  `));
+}
 
-  if (type === 'all' || type === 'users') {
-    analytics.users = results[0][0];
-  }
+// Assuming the first query is for users, second for tests, and third for completion
+if (type === 'all' || type === 'users') {
+  analytics.users = results[0][0];
+}
 
-  if (type === 'all' || type === 'tests') {
-    analytics.tests = results[type === 'all' ? 1 : 0][0];
-  }
+if (type === 'all' || type === 'tests') {
+  analytics.tests = results[1][0];
+}
 
-  if (type === 'all' || type === 'subjects') {
-    analytics.subjects = results[type === 'all' ? 2 : 0][0];
-  }
+if (type === 'all' || type === 'completion') {
+  analytics.testCompletionStats = results[2][0];
+}
+if (type === 'all' || type === 'subjects') {
+  analytics.subjects = results[type === 'all' ? 2 : 0][0];
+}
 
+return res.json({ success: true, data: analytics });
   const result = {
     success: true,
     range,
@@ -714,7 +724,9 @@ const getDashboardStats = catchAsync(async (req, res) => {
         COUNT(tr.id) as totalTests,
         ROUND(AVG(tr.score), 2) as averageScore
       FROM subjects s
-      LEFT JOIN test_results tr ON tr.subject_id = s.id
+      LEFT JOIN questions q ON q.subject_id = s.id
+      LEFT JOIN test_answers ta ON ta.question_id = q.id
+      LEFT JOIN test_results tr ON tr.id = ta.test_result_id
       GROUP BY s.id, s.name
     `);
 
@@ -918,7 +930,7 @@ const updateUser = catchAsync(async (req, res) => {
   // Validate user data
   const validation = validateUser(userData);
   if (!validation.isValid) {
-    throw new ApiError(validation.message, 400);
+    throw new ApiError(validation.errors.join(', '), 400);
   }
 
   // Check unique constraints

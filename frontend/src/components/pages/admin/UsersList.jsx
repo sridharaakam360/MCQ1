@@ -10,60 +10,103 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   Button,
   IconButton,
+  Chip,
+  TextField,
+  InputAdornment,
   CircularProgress,
   Alert,
   Dialog,
-  DialogTitle,
-  DialogContent,
   DialogActions,
-  TextField,
-  FormControlLabel,
-  Switch,
-  Pagination
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Tooltip,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText
 } from '@mui/material';
 import {
+  Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Add as AddIcon
+  Search as SearchIcon,
+  Refresh as RefreshIcon,
+  MoreVert as MoreVertIcon,
+  Check as CheckIcon,
+  Block as BlockIcon
 } from '@mui/icons-material';
-import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import apiService from '../../../services/api';
 
-const MotionPaper = motion(Paper);
-
 const UsersList = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [users, setUsers] = useState([]);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [actionMenuAnchor, setActionMenuAnchor] = useState(null);
+  const [activeMenuUser, setActiveMenuUser] = useState(null);
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (pageNum = page, limit = rowsPerPage, search = searchQuery) => {
     try {
       setLoading(true);
-      setError('');
+      setError(null);
+
+      // Verify admin access before making the request
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
       const response = await apiService.admin.getUsers({
-        page,
-        limit: 10,
-        search: searchQuery
+        page: pageNum + 1, // API uses 1-based indexing
+        limit,
+        search: search.trim() || undefined
       });
 
       if (response?.data?.success) {
-        setUsers(response.data.data.users);
-        setTotalPages(response.data.data.pagination.pages);
+        setUsers(response.data.users || []);
+        setTotalUsers(response.data.pagination?.total || 0);
       } else {
-        throw new Error('Failed to fetch users');
+        throw new Error(response?.data?.message || 'Failed to fetch users');
       }
     } catch (err) {
       console.error('Error fetching users:', err);
-      setError(err.message || 'Failed to load users');
+      let errorMessage = 'An error occurred while fetching users';
+      let shouldRedirect = false;
+      let redirectPath = '';
+
+      switch (err.response?.status) {
+        case 403:
+          errorMessage = 'You do not have permission to access this resource.';
+          shouldRedirect = true;
+          redirectPath = '/dashboard';
+          break;
+        case 401:
+          errorMessage = 'Your session has expired. Please log in again.';
+          shouldRedirect = true;
+          redirectPath = '/login';
+          break;
+        default:
+          errorMessage = err.message || errorMessage;
+      }
+
+      setError(errorMessage);
+
+      if (shouldRedirect) {
+        setTimeout(() => {
+          window.location.href = redirectPath;
+        }, 2000);
+      }
     } finally {
       setLoading(false);
     }
@@ -71,159 +114,304 @@ const UsersList = () => {
 
   useEffect(() => {
     fetchUsers();
-  }, [page, searchQuery]);
+  }, [page, rowsPerPage]);
+
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const handleSearch = (e) => {
+    if (e.key === 'Enter') {
+      setPage(0); // Reset to first page when searching
+      fetchUsers(0, rowsPerPage, searchQuery);
+    }
+  };
+
+  const handleSearchChange = (e) => {
+    setSearchQuery(e.target.value);
+  };
+
+  const handleRefresh = () => {
+    fetchUsers(page, rowsPerPage, searchQuery);
+  };
+
+  const handleAddUser = () => {
+    navigate('/admin/users/new');
+  };
+
+  const handleEditUser = (userId) => {
+    navigate(`/admin/users/${userId}/edit`);
+  };
 
   const handleDeleteClick = (user) => {
     setSelectedUser(user);
     setDeleteDialogOpen(true);
+    handleCloseMenu();
   };
 
   const handleDeleteConfirm = async () => {
+    if (!selectedUser) return;
+
     try {
       setLoading(true);
-      await apiService.admin.deleteUser(selectedUser.id);
-      fetchUsers(); // Refresh the list
-      setDeleteDialogOpen(false);
-      setSelectedUser(null);
+      const response = await apiService.admin.deleteUser(selectedUser.id);
+
+      if (response?.data?.success) {
+        // Remove user from the list
+        setUsers(users.filter(user => user.id !== selectedUser.id));
+        setTotalUsers(prev => prev - 1);
+      } else {
+        throw new Error(response?.data?.message || 'Failed to delete user');
+      }
     } catch (err) {
       console.error('Error deleting user:', err);
-      setError(err.message || 'Failed to delete user');
+      setError(err.message || 'An error occurred while deleting the user');
     } finally {
       setLoading(false);
+      setDeleteDialogOpen(false);
+      setSelectedUser(null);
     }
   };
 
-  const handlePageChange = (event, value) => {
-    setPage(value);
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setSelectedUser(null);
   };
 
-  const handleSearchChange = (event) => {
-    setSearchQuery(event.target.value);
-    setPage(1); // Reset to first page when searching
+  const handleMenuOpen = (event, user) => {
+    setActionMenuAnchor(event.currentTarget);
+    setActiveMenuUser(user);
   };
 
-  if (loading && !users.length) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const handleCloseMenu = () => {
+    setActionMenuAnchor(null);
+    setActiveMenuUser(null);
+  };
+
+  const handleToggleUserStatus = async () => {
+    if (!activeMenuUser) return;
+
+    try {
+      setLoading(true);
+      const newStatus = !activeMenuUser.is_active;
+      
+      const response = await apiService.admin.updateUser(activeMenuUser.id, {
+        isActive: newStatus
+      });
+
+      if (response?.data?.success) {
+        // Update user in the list
+        setUsers(users.map(user => 
+          user.id === activeMenuUser.id ? { ...user, is_active: newStatus } : user
+        ));
+      } else {
+        throw new Error(response?.data?.message || `Failed to ${newStatus ? 'activate' : 'deactivate'} user`);
+      }
+    } catch (err) {
+      console.error('Error updating user status:', err);
+      setError(err.message || 'An error occurred while updating user status');
+    } finally {
+      setLoading(false);
+      handleCloseMenu();
+    }
+  };
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      <MotionPaper
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <Box sx={{ p: 3 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Typography variant="h4">
-              Users Management
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => navigate('/admin/users/new')}
-            >
-              Add New User
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1">
+          Users Management
+        </Typography>
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<AddIcon />}
+          onClick={handleAddUser}
+        >
+          Add User
+        </Button>
+      </Box>
+
+      {error && (
+        <Alert 
+          severity="error" 
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={handleRefresh}>
+              Retry
             </Button>
-          </Box>
+          }
+        >
+          {error}
+        </Alert>
+      )}
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
-          )}
-
+      <Paper sx={{ width: '100%', mb: 2 }}>
+        <Box sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
           <TextField
-            fullWidth
-            label="Search Users"
             variant="outlined"
+            placeholder="Search users..."
+            size="small"
             value={searchQuery}
             onChange={handleSearchChange}
-            sx={{ mb: 3 }}
+            onKeyPress={handleSearch}
+            sx={{ mr: 2, flexGrow: 1 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
           />
+          <Tooltip title="Refresh">
+            <IconButton onClick={handleRefresh}>
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
 
-          <TableContainer>
-            <Table>
-              <TableHead>
+        <TableContainer>
+          <Table sx={{ minWidth: 750 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell>Email</TableCell>
+                <TableCell>Role</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Tests</TableCell>
+                <TableCell>Avg. Score</TableCell>
+                <TableCell>Joined</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading && users.length === 0 ? (
                 <TableRow>
-                  <TableCell>Name</TableCell>
-                  <TableCell>Email</TableCell>
-                  <TableCell>Username</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Role</TableCell>
-                  <TableCell>Actions</TableCell>
+                  <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                    <CircularProgress size={40} />
+                  </TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {users.map((user) => (
+              ) : users.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                    No users found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                users.map((user) => (
                   <TableRow key={user.id}>
-                    <TableCell>{`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username}</TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.username}</TableCell>
                     <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box
-                          sx={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: '50%',
-                            bgcolor: user.is_active ? 'success.main' : 'error.main'
-                          }}
-                        />
-                        {user.is_active ? 'Active' : 'Inactive'}
-                      </Box>
+                      {user.first_name || user.last_name
+                        ? `${user.first_name || ''} ${user.last_name || ''}`.trim()
+                        : 'N/A'}
                     </TableCell>
-                    <TableCell>{user.is_admin ? 'Admin' : 'User'}</TableCell>
+                    <TableCell>{user.email}</TableCell>
                     <TableCell>
-                      <IconButton
-                        color="primary"
-                        onClick={() => navigate(`/admin/users/${user.id}/edit`)}
+                      <Chip 
+                        label={user.is_admin ? 'Admin' : 'User'}
+                        color={user.is_admin ? 'secondary' : 'default'}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={user.is_active ? 'Active' : 'Inactive'}
+                        color={user.is_active ? 'success' : 'error'}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>{user.total_tests || 0}</TableCell>
+                    <TableCell>{user.avg_score ? `${user.avg_score}%` : 'N/A'}</TableCell>
+                    <TableCell>
+                      {new Date(user.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell align="right">
+                      <IconButton 
+                        size="small" 
+                        onClick={(e) => handleMenuOpen(e, user)}
+                        aria-label="more actions"
                       >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        color="error"
-                        onClick={() => handleDeleteClick(user)}
-                      >
-                        <DeleteIcon />
+                        <MoreVertIcon />
                       </IconButton>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
 
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-            <Pagination
-              count={totalPages}
-              page={page}
-              onChange={handlePageChange}
-              color="primary"
-            />
-          </Box>
-        </Box>
-      </MotionPaper>
+        <TablePagination
+          rowsPerPageOptions={[5, 10, 25]}
+          component="div"
+          count={totalUsers}
+          rowsPerPage={rowsPerPage}
+          page={page}
+          onPageChange={handleChangePage}
+          onRowsPerPageChange={handleChangeRowsPerPage}
+        />
+      </Paper>
+
+      {/* Action Menu */}
+      <Menu
+        anchorEl={actionMenuAnchor}
+        open={Boolean(actionMenuAnchor)}
+        onClose={handleCloseMenu}
+      >
+        <MenuItem onClick={() => {
+          handleEditUser(activeMenuUser?.id);
+          handleCloseMenu();
+        }}>
+          <ListItemIcon>
+            <EditIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Edit</ListItemText>
+        </MenuItem>
+        
+        {activeMenuUser && (
+          <MenuItem onClick={handleToggleUserStatus}>
+            <ListItemIcon>
+              {activeMenuUser.is_active ? <BlockIcon fontSize="small" /> : <CheckIcon fontSize="small" />}
+            </ListItemIcon>
+            <ListItemText>
+              {activeMenuUser.is_active ? 'Deactivate' : 'Activate'}
+            </ListItemText>
+          </MenuItem>
+        )}
+        
+        <MenuItem onClick={() => handleDeleteClick(activeMenuUser)} sx={{ color: 'error.main' }}>
+          <ListItemIcon>
+            <DeleteIcon fontSize="small" color="error" />
+          </ListItemIcon>
+          <ListItemText>Delete</ListItemText>
+        </MenuItem>
+      </Menu>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Delete User</DialogTitle>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteCancel}
+      >
+        <DialogTitle>Confirm Deletion</DialogTitle>
         <DialogContent>
-          <Typography>
-            Are you sure you want to delete this user? This action cannot be undone.
-          </Typography>
+          <DialogContentText>
+            Are you sure you want to delete the user 
+            <strong>{selectedUser ? ` ${selectedUser.email}` : ''}</strong>? 
+            This action cannot be undone.
+          </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleDeleteConfirm}
-            color="error"
-            variant="contained"
-            disabled={loading}
-          >
-            {loading ? <CircularProgress size={24} /> : 'Delete'}
+          <Button onClick={handleDeleteCancel} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
           </Button>
         </DialogActions>
       </Dialog>
@@ -231,4 +419,4 @@ const UsersList = () => {
   );
 };
 
-export default UsersList; 
+export default UsersList;

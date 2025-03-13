@@ -134,7 +134,14 @@ const Navbar = () => {
     { title: 'Take Test', path: '/test', icon: <QuestionAnswer /> }
   ];
 
-  const isCurrentPath = (path) => location.pathname === path;
+  const isCurrentPath = (path) => {
+    // Special handling for admin routes
+    if (path.startsWith('/admin')) {
+      const normalizedPath = path === '/admin' ? '/admin/dashboard' : path;
+      return location.pathname === normalizedPath;
+    }
+    return location.pathname === path;
+  };
 
   const renderMenu = (
     <Menu

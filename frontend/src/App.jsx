@@ -18,6 +18,7 @@ import QuestionUpload from './components/pages/admin/QuestionUpload';
 import UsersList from './components/pages/admin/UsersList';
 import PrivateRoute from './components/routes/PrivateRoute';
 import AdminRoute from './components/routes/AdminRoute';
+import CatchAllRoute from './components/routes/CatchAllRoute';
 
 const App = () => {
   return (
@@ -50,8 +51,8 @@ const App = () => {
               </Route>
             </Route>
 
-            {/* Catch all route */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            {/* Catch all route - Redirect based on user role */}
+            <Route path="*" element={<CatchAllRoute />} />
           </Routes>
         </Router>
       </AuthProvider>
@@ -59,4 +60,4 @@ const App = () => {
   );
 };
 
-export default App; 
+export default App;

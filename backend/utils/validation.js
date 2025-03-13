@@ -265,6 +265,49 @@ const validateReport = ({ type, range, format }) => {
   return { isValid: true };
 };
 
+const validateUser = (userData, throwError = false) => {
+  const errors = [];
+  
+  // Validate email
+  const emailValidation = validateEmail(userData.email, throwError);
+  if (!emailValidation.isValid) {
+    errors.push(emailValidation.message);
+  }
+
+  // Validate password if provided
+  if (userData.password) {
+    const passwordValidation = validatePassword(userData.password, throwError);
+    if (!passwordValidation.isValid) {
+      errors.push(passwordValidation.message);
+    }
+  }
+
+  // Validate first name
+  const firstNameValidation = validateName(userData.firstName, throwError);
+  if (!firstNameValidation.isValid) {
+    errors.push(firstNameValidation.message);
+  }
+
+  // Validate last name
+  const lastNameValidation = validateName(userData.lastName, throwError);
+  if (!lastNameValidation.isValid) {
+    errors.push(lastNameValidation.message);
+  }
+
+  // Validate phone number if provided
+  if (userData.phoneNumber) {
+    const phoneValidation = validatePhone(userData.phoneNumber, throwError);
+    if (!phoneValidation.isValid) {
+      errors.push(phoneValidation.message);
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+};
+
 module.exports = {
   validatePassword,
   validateEmail,
@@ -278,5 +321,6 @@ module.exports = {
   REGEX,
   validateTest,
   validateSubject,
-  validateReport
-}; 
+  validateReport,
+  validateUser
+};

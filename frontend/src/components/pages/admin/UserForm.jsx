@@ -10,60 +10,115 @@ import {
   Switch,
   Grid,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Divider,
+  FormHelperText,
+  IconButton,
+  InputAdornment,
+  Breadcrumbs
 } from '@mui/material';
-import { useNavigate, useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import {
+  Save as SaveIcon,
+  ArrowBack as ArrowBackIcon,
+  Visibility as VisibilityIcon,
+  VisibilityOff as VisibilityOffIcon
+} from '@mui/icons-material';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import apiService from '../../../services/api';
-
-const MotionPaper = motion(Paper);
 
 const UserForm = () => {
   const navigate = useNavigate();
-  const { id } = useParams();
-  const isEditMode = Boolean(id);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const { userId } = useParams();
+  const isEditMode = Boolean(userId);
+
   const [formData, setFormData] = useState({
-    username: '',
-    email: '',
     firstName: '',
     lastName: '',
+    email: '',
     password: '',
-    isAdmin: false,
-    isVerified: true,
-    isActive: true
+    confirmPassword: '',
+    isActive: true,
+    isAdmin: false
   });
+
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(isEditMode);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     if (isEditMode) {
       fetchUserData();
     }
-  }, [isEditMode, id]);
+  }, [userId]);
 
   const fetchUserData = async () => {
     try {
-      setLoading(true);
-      const response = await apiService.admin.getUsers({ id });
-      if (response?.data?.success && response.data.data.users[0]) {
-        const user = response.data.data.users[0];
+      setInitialLoading(true);
+      setError(null);
+
+      const response = await apiService.admin.getUserById(userId);
+
+      if (response?.data?.success) {
+        const userData = response.data.user;
         setFormData({
-          username: user.username,
-          email: user.email,
-          firstName: user.first_name,
-          lastName: user.last_name,
-          isAdmin: user.is_admin,
-          isVerified: user.is_verified,
-          isActive: user.is_active
+          firstName: userData.first_name || '',
+          lastName: userData.last_name || '',
+          email: userData.email || '',
+          password: '',
+          confirmPassword: '',
+          isActive: userData.is_active || false,
+          isAdmin: userData.is_admin || false
         });
+      } else {
+        throw new Error(response?.data?.message || 'Failed to fetch user data');
       }
     } catch (err) {
-      setError('Failed to fetch user data');
-      console.error('Error fetching user:', err);
+      console.error('Error fetching user data:', err);
+      setError(err.message || 'An error occurred while fetching user data');
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
+  };
+
+  const validateForm = () => {
+    const errors = {};
+    let isValid = true;
+
+    if (!formData.email.trim()) {
+      errors.email = 'Email is required';
+      isValid = false;
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      errors.email = 'Email is invalid';
+      isValid = false;
+    }
+
+    if (!isEditMode) {
+      if (!formData.password) {
+        errors.password = 'Password is required';
+        isValid = false;
+      } else if (formData.password.length < 6) {
+        errors.password = 'Password must be at least 6 characters';
+        isValid = false;
+      }
+
+      if (formData.password !== formData.confirmPassword) {
+        errors.confirmPassword = 'Passwords do not match';
+        isValid = false;
+      }
+    } else if (formData.password && formData.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+      isValid = false;
+    } else if (formData.password && formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+      isValid = false;
+    }
+
+    setFormErrors(errors);
+    return isValid;
   };
 
   const handleChange = (e) => {
@@ -76,32 +131,74 @@ const UserForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!validateForm()) return;
+
     try {
       setLoading(true);
-      setError('');
-      setSuccess('');
+      setError(null);
+      setSuccess(null);
 
-      if (isEditMode) {
-        await apiService.admin.updateUser(id, formData);
-        setSuccess('User updated successfully');
-      } else {
-        await apiService.admin.createUser(formData);
-        setSuccess('User created successfully');
+      const payload = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        isActive: formData.isActive,
+        isAdmin: formData.isAdmin
+      };
+
+      // Only include password if it's provided
+      if (formData.password) {
+        payload.password = formData.password;
       }
 
-      // Redirect after a short delay
-      setTimeout(() => {
-        navigate('/admin/users');
-      }, 1500);
+      let response;
+      if (isEditMode) {
+        response = await apiService.admin.updateUser(userId, payload);
+      } else {
+        response = await apiService.admin.createUser(payload);
+      }
+
+      if (response?.data?.success) {
+        setSuccess(`User successfully ${isEditMode ? 'updated' : 'created'}!`);
+        
+        if (!isEditMode) {
+          // Clear form after successful creation
+          setFormData({
+            firstName: '',
+            lastName: '',
+            email: '',
+            password: '',
+            confirmPassword: '',
+            isActive: true,
+            isAdmin: false
+          });
+        }
+        
+        // Redirect after a short delay
+        setTimeout(() => {
+          navigate('/admin/users');
+        }, 2000);
+      } else {
+        throw new Error(response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} user`);
+      }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save user');
-      console.error('Error saving user:', err);
+      console.error(`Error ${isEditMode ? 'updating' : 'creating'} user:`, err);
+      setError(err.message || `An error occurred while ${isEditMode ? 'updating' : 'creating'} the user`);
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading && isEditMode) {
+  const handleTogglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
+
+  const handleToggleConfirmPasswordVisibility = () => {
+    setShowConfirmPassword(!showConfirmPassword);
+  };
+
+  if (initialLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
         <CircularProgress />
@@ -111,141 +208,211 @@ const UserForm = () => {
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
-      <MotionPaper
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <Box sx={{ p: 3 }}>
-          <Typography variant="h4" gutterBottom>
-            {isEditMode ? 'Edit User' : 'Add New User'}
+      <Box sx={{ mb: 3 }}>
+        <Breadcrumbs aria-label="breadcrumb">
+          <Link to="/admin/dashboard" style={{ textDecoration: 'none', color: 'inherit' }}>
+            Dashboard
+          </Link>
+          <Link to="/admin/users" style={{ textDecoration: 'none', color: 'inherit' }}>
+            Users
+          </Link>
+          <Typography color="text.primary">
+            {isEditMode ? 'Edit User' : 'New User'}
           </Typography>
+        </Breadcrumbs>
+      </Box>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
-          )}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1">
+          {isEditMode ? 'Edit User' : 'Create New User'}
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate('/admin/users')}
+        >
+          Back to Users
+        </Button>
+      </Box>
 
-          {success && (
-            <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>
-          )}
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+      {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
 
-          <form onSubmit={handleSubmit}>
-            <Grid container spacing={3}>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Username"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleChange}
-                  required
-                  disabled={isEditMode}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Email"
-                  name="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="First Name"
-                  name="firstName"
-                  value={formData.firstName}
-                  onChange={handleChange}
-                  required
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Last Name"
-                  name="lastName"
-                  value={formData.lastName}
-                  onChange={handleChange}
-                  required
-                />
-              </Grid>
-              {!isEditMode && (
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Password"
-                    name="password"
-                    type="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                  />
-                </Grid>
-              )}
-              <Grid item xs={12}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      name="isAdmin"
-                      checked={formData.isAdmin}
-                      onChange={handleChange}
-                    />
-                  }
-                  label="Admin Access"
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      name="isVerified"
-                      checked={formData.isVerified}
-                      onChange={handleChange}
-                    />
-                  }
-                  label="Verified User"
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      name="isActive"
-                      checked={formData.isActive}
-                      onChange={handleChange}
-                    />
-                  }
-                  label="Active User"
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    disabled={loading}
-                    sx={{ minWidth: 120 }}
-                  >
-                    {loading ? <CircularProgress size={24} /> : 'Save'}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={() => navigate('/admin/users')}
-                  >
-                    Cancel
-                  </Button>
-                </Box>
-              </Grid>
+      <Paper sx={{ p: 3 }}>
+        <form onSubmit={handleSubmit}>
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="First Name"
+                name="firstName"
+                value={formData.firstName}
+                onChange={handleChange}
+                variant="outlined"
+              />
             </Grid>
-          </form>
-        </Box>
-      </MotionPaper>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Last Name"
+                name="lastName"
+                value={formData.lastName}
+                onChange={handleChange}
+                variant="outlined"
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Email Address"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleChange}
+                variant="outlined"
+                required
+                error={Boolean(formErrors.email)}
+                helperText={formErrors.email}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Divider sx={{ my: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  {isEditMode ? 'Change Password (optional)' : 'Password'}
+                </Typography>
+              </Divider>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                value={formData.password}
+                onChange={handleChange}
+                variant="outlined"
+                required={!isEditMode}
+                error={Boolean(formErrors.password)}
+                helperText={formErrors.password}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={handleTogglePasswordVisibility}
+                        edge="end"
+                      >
+                        {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                      </IconButton>
+                    </InputAdornment>
+                  )
+                }}
+              />
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Confirm Password"
+                name="confirmPassword"
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                variant="outlined"
+                required={!isEditMode}
+                error={Boolean(formErrors.confirmPassword)}
+                helperText={formErrors.confirmPassword}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={handleToggleConfirmPasswordVisibility}
+                        edge="end"
+                      >
+                        {showConfirmPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                      </IconButton>
+                    </InputAdornment>
+                  )
+                }}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Divider sx={{ my: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  User Settings
+                </Typography>
+              </Divider>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.isActive}
+                    onChange={handleChange}
+                    name="isActive"
+                    color="success"
+                  />
+                }
+                label="Active"
+              />
+              <FormHelperText>
+                Active users can log in and access the system
+              </FormHelperText>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.isAdmin}
+                    onChange={handleChange}
+                    name="isAdmin"
+                    color="secondary"
+                  />
+                }
+                label="Admin"
+              />
+              <FormHelperText>
+                Admin users have access to all administrative features
+              </FormHelperText>
+            </Grid>
+
+            <Grid item xs={12} sx={{ mt: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  onClick={() => navigate('/admin/users')}
+                  sx={{ mr: 2 }}
+                  disabled={loading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  color="primary"
+                  startIcon={<SaveIcon />}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <CircularProgress size={24} />
+                  ) : (
+                    isEditMode ? 'Update User' : 'Create User'
+                  )}
+                </Button>
+              </Box>
+            </Grid>
+          </Grid>
+        </form>
+      </Paper>
     </Container>
   );
 };
 
-export default UserForm; 
+export default UserForm;

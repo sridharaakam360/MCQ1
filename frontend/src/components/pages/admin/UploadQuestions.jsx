@@ -14,523 +14,402 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControlLabel,
-  Switch,
-  Chip,
   IconButton,
   Tooltip,
-  LinearProgress,
   Divider,
+  Stepper,
+  Step,
+  StepLabel,
+  Grid,
+  Card,
+  CardContent,
+  CardActions,
+  Chip
 } from '@mui/material';
 import {
   CloudUpload as CloudUploadIcon,
-  Preview as PreviewIcon,
-  Edit as EditIcon,
+  Download as DownloadIcon,
   Delete as DeleteIcon,
-  Check as CheckIcon,
-  Close as CloseIcon,
-  Help as HelpIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon,
+  ArrowBack as ArrowBackIcon,
+  ArrowForward as ArrowForwardIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
-import * as XLSX from 'xlsx';
-import apiService from '../../../services/api';
-import { safeToUpperCase } from '../../../utils/stringUtils';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const BATCH_SIZE = 100;
-const MAX_RETRIES = 3;
+import { useNavigate } from 'react-router-dom';
+import { useDropzone } from 'react-dropzone';
+import apiService from '../../../services/api';
 
 const UploadQuestions = () => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [previewData, setPreviewData] = useState([]);
-  const [showPreview, setShowPreview] = useState(false);
-  const [updateMode, setUpdateMode] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [validationErrors, setValidationErrors] = useState([]);
-  const [isDragging, setIsDragging] = useState(false);
-  const [retryQueue, setRetryQueue] = useState([]);
+  const navigate = useNavigate();
+  const [activeStep, setActiveStep] = useState(0);
+  const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [uploadResults, setUploadResults] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
 
-  const validateQuestions = (questions) => {
-    if (questions.length === 0) {
-      throw new Error('The file contains no data. Please check your file format.');
-    }
-    
-    // Check if the first row has the expected field names
-    const firstRow = questions[0];
-    const expectedFields = ['question', 'subject', 'year', 'answer', 'option1', 'option2', 'option3', 'option4'];
-    const missingFields = expectedFields.filter(field => !Object.keys(firstRow).includes(field));
-    
-    if (missingFields.length > 0) {
-      throw new Error(`The file is missing required columns: ${missingFields.join(', ')}. Please download and use the template.`);
-    }
-    
-    const errors = [];
-    for (let i = 0; i < questions.length; i++) {
-      const question = questions[i];
-      const rowNumber = i + 2; // Excel row number (1-indexed + header row)
-      
-      // Check for required fields
-      if (!question.question) {
-        errors.push(`Row ${rowNumber}: Missing question`);
-      }
-      
-      if (!question.subject) {
-        errors.push(`Row ${rowNumber}: Missing subject for question: "${question.question?.substring(0, 30)}..."`);
-      }
-      
-      if (!question.year) {
-        errors.push(`Row ${rowNumber}: Missing year for question: "${question.question?.substring(0, 30)}..."`);
-      }
-      
-      if (!question.answer) {
-        errors.push(`Row ${rowNumber}: Missing answer for question: "${question.question?.substring(0, 30)}..."`);
-      }
-      
-      if (!question.option1 || !question.option2 || !question.option3 || !question.option4) {
-        errors.push(`Row ${rowNumber}: Missing one or more options for question: "${question.question?.substring(0, 30)}..."`);
-      }
-      
-      // Validate that answer is one of the options
-      const answer = safeToUpperCase(question.answer);
-      if (!['A', 'B', 'C', 'D'].includes(answer)) {
-        errors.push(`Row ${rowNumber}: Invalid answer format. Must be A, B, C, or D for question: "${question.question?.substring(0, 30)}..."`);
-      }
-    }
+  const onDrop = useCallback(acceptedFiles => {
+    // Filter out files that are not Excel
+    const excelFiles = acceptedFiles.filter(file => 
+      file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.type === 'application/vnd.ms-excel'
+    );
 
-    return errors;
-  };
-
-  const handleDragEnter = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = e.dataTransfer.files;
-    if (files.length) {
-      handleFileSelection(files[0]);
-    }
-  };
-
-  const validateFile = (file) => {
-    if (!file) return 'No file selected';
-    
-    if (file.size > MAX_FILE_SIZE) {
-      return `File size exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB limit`;
-    }
-
-    const allowedTypes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/csv'
-    ];
-    
-    if (!allowedTypes.includes(file.type)) {
-      return 'Invalid file type. Please upload an Excel (.xlsx) or CSV file';
-    }
-
-    return null;
-  };
-
-  const handleFileSelection = async (file) => {
-    const fileError = validateFile(file);
-    if (fileError) {
-      setError(fileError);
+    if (excelFiles.length < acceptedFiles.length) {
+      setUploadError('Only Excel files (.xlsx, .xls) are allowed');
       return;
     }
 
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    setSelectedFile(file);
-    setPreviewData([]);
-    setValidationErrors([]);
+    setFiles(excelFiles);
+    setUploadError(null);
+  }, []);
 
-    try {
-      const questions = await readFile(file);
-      const errors = validateQuestions(questions);
-      
-      if (errors.length > 0) {
-        setValidationErrors(errors);
-      } else {
-        setPreviewData(questions);
-        setShowPreview(true);
-      }
-    } catch (err) {
-      setError(err.message || 'Error processing file');
-      setSelectedFile(null);
-    } finally {
-      setLoading(false);
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel': ['.xls']
+    },
+    maxFiles: 1,
+    multiple: false
+  });
+  
+  const steps = ['Select File', 'Upload File', 'Review Results'];
+
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setFiles([{
+        file,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        status: 'ready'
+      }]);
+      setActiveStep(1);
     }
   };
 
-  const readFile = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const questions = XLSX.utils.sheet_to_json(worksheet);
-          resolve(questions);
-        } catch (err) {
-          reject(new Error('Error reading file: ' + err.message));
-        }
-      };
-      reader.onerror = () => reject(new Error('Error reading file'));
-      reader.readAsArrayBuffer(file);
-    });
-  };
-
-  const uploadBatch = async (batch, retryCount = 0) => {
+  const handleDownloadTemplate = async () => {
     try {
-      const response = await apiService.admin.uploadQuestions({
-        questions: batch,
-        update_mode: updateMode
-      });
+      const response = await apiService.admin.getQuestionTemplate();
       
-      if (!response.data.success) {
-        throw new Error(response.data.message || 'Error uploading questions');
-      }
-      
-      return { success: true, count: batch.length };
+      // Create a download link for the blob
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'question-template.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     } catch (error) {
-      if (retryCount < MAX_RETRIES) {
-        // Add to retry queue
-        setRetryQueue(prev => [...prev, { batch, retryCount: retryCount + 1 }]);
-      }
-      return {
-        success: false,
-        questions: batch,
-        error: error.message
-      };
+      console.error('Error downloading template:', error);
+      setUploadError('Failed to download template. Please try again.');
     }
+  };
+
+  const handleRemoveFile = (index) => {
+    const newFiles = [...files];
+    URL.revokeObjectURL(newFiles[index].preview);
+    newFiles.splice(index, 1);
+    setFiles(newFiles);
+    setActiveStep(0);
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || previewData.length === 0) return;
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    setUploadProgress(0);
-    setRetryQueue([]);
-    setRetryCount(0);
-
+    if (files.length === 0) return;
+    
     try {
-      const totalBatches = Math.ceil(previewData.length / BATCH_SIZE);
-      let failedQuestions = [];
+      setUploading(true);
+      setUploadError(null);
+      setUploadSuccess(false);
       
-      // Upload initial batches
-      for (let i = 0; i < totalBatches; i++) {
-        const start = i * BATCH_SIZE;
-        const end = Math.min((i + 1) * BATCH_SIZE, previewData.length);
-        const batch = previewData.slice(start, end);
-        
-        const result = await uploadBatch(batch);
-        if (!result.success) {
-          failedQuestions = [...failedQuestions, ...result.questions];
-        }
-        
-        setUploadProgress(((i + 1) / totalBatches) * 100);
-      }
-
-      // Process retry queue
-      while (retryQueue.length > 0 && retryCount < MAX_RETRIES) {
-        setRetryCount(prev => prev + 1);
-        const currentQueue = [...retryQueue];
-        setRetryQueue([]);
-        
-        for (const { batch, retryCount } of currentQueue) {
-          const result = await uploadBatch(batch, retryCount);
-          if (!result.success) {
-            failedQuestions = [...failedQuestions, ...result.questions];
-          }
-        }
-      }
-
-      const successCount = previewData.length - failedQuestions.length;
-      setSuccess(`Successfully uploaded ${successCount} questions!`);
+      const formData = new FormData();
+      formData.append('file', files[0].file);
       
-      if (failedQuestions.length > 0) {
-        setError(`Failed to upload ${failedQuestions.length} questions. You can download the failed records.`);
-        // Save failed questions for download
-        const ws = XLSX.utils.json_to_sheet(failedQuestions);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Failed');
-        XLSX.writeFile(wb, 'failed_questions.xlsx');
+      const response = await apiService.admin.uploadQuestions(formData);
+      
+      if (response?.data?.success) {
+        setUploadSuccess(true);
+        setUploadResults(response.data.data);
+        setActiveStep(2);
+      } else {
+        throw new Error(response?.data?.message || 'Upload failed');
       }
-
-      setShowPreview(false);
-      setSelectedFile(null);
-      setPreviewData([]);
     } catch (error) {
-      console.error('Upload error:', error);
-      setError(error.message || 'Error uploading questions');
+      console.error('Error uploading questions:', error);
+      setUploadError(error.message || 'Failed to upload questions. Please try again.');
     } finally {
-      setLoading(false);
-      setUploadProgress(0);
-      setRetryCount(0);
+      setUploading(false);
     }
   };
 
-  const downloadTemplate = () => {
-    const template = [
-      {
-        question: 'Sample question text here?',
-        option1: 'Option A',
-        option2: 'Option B',
-        option3: 'Option C',
-        option4: 'Option D',
-        answer: 'A',
-        subject: 'Pharmaceutical Chemistry',
-        year: '2023',
-        degree: 'B.Pharm' // Optional field
-      }
-    ];
-
-    const ws = XLSX.utils.json_to_sheet(template);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    XLSX.writeFile(wb, 'question_upload_template.xlsx');
+  const handleReset = () => {
+    files.forEach(file => URL.revokeObjectURL(file.preview));
+    setFiles([]);
+    setUploadSuccess(false);
+    setUploadError(null);
+    setUploadResults(null);
+    setActiveStep(0);
   };
 
-  return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      <Paper elevation={3} sx={{ p: 4 }}>
-        <Typography variant="h4" gutterBottom align="center">
-          Upload Questions
-        </Typography>
+  const handleNext = () => {
+    setActiveStep((prevActiveStep) => prevActiveStep + 1);
+  };
 
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="body1" paragraph>
-            Upload questions in bulk using Excel (.xlsx) or CSV (.csv) format.
-            Please ensure your file follows the required format.
-          </Typography>
-          <Typography variant="body2" color="text.secondary" paragraph>
-            <strong>Required fields:</strong> question, option1, option2, option3, option4, answer, subject, year
-          </Typography>
-          <Typography variant="body2" color="text.secondary" paragraph>
-            <strong>Optional fields:</strong> degree
-          </Typography>
-          <Typography variant="body2" color="text.secondary" paragraph>
-            The answer field must be one of: A, B, C, or D
-          </Typography>
-          <Button
-            variant="outlined"
-            onClick={downloadTemplate}
-            sx={{ mb: 2 }}
-          >
-            Download Template
-          </Button>
-        </Box>
+  const handleBack = () => {
+    setActiveStep((prevActiveStep) => prevActiveStep - 1);
+  };
 
-        <Box
-          sx={{
-            border: '2px dashed',
-            borderColor: isDragging ? 'primary.main' : '#ccc',
-            borderRadius: 2,
-            p: 3,
-            textAlign: 'center',
-            bgcolor: isDragging ? 'rgba(25, 118, 210, 0.08)' : '#fafafa',
-            transition: 'all 0.3s',
-            '&:hover': {
-              borderColor: 'primary.main',
-              bgcolor: 'rgba(25, 118, 210, 0.04)'
-            }
-          }}
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <input
-            accept=".xlsx,.csv"
-            style={{ display: 'none' }}
-            id="file-upload"
-            type="file"
-            onChange={(e) => handleFileSelection(e.target.files[0])}
-            disabled={loading}
-          />
-          <label htmlFor="file-upload">
-            <Typography variant="body1" gutterBottom>
-              Drag and drop your file here, or
-            </Typography>
-            <Button
-              component="span"
-              variant="contained"
-              startIcon={<CloudUploadIcon />}
-              disabled={loading}
-            >
-              Choose File
-            </Button>
-          </label>
-          {loading && (
-            <Box sx={{ mt: 2 }}>
-              <CircularProgress size={24} />
-            </Box>
-          )}
-          {selectedFile && !loading && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" color="primary">
-                {selectedFile.name}
+  const renderStepContent = (step) => {
+    switch (step) {
+      case 0:
+        return (
+          <Box sx={{ mt: 4 }}>
+            <Paper sx={{ p: 4, textAlign: 'center' }}>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: 'none' }}
+                id="file-upload"
+                onChange={handleFileSelect}
+              />
+              <label htmlFor="file-upload">
+                <Button
+                  variant="outlined"
+                  component="span"
+                  startIcon={<CloudUploadIcon />}
+                >
+                  Choose File
+                </Button>
+              </label>
+              <Typography variant="body2" color="textSecondary" sx={{ mt: 2 }}>
+                Supported formats: .xlsx, .xls, .csv
               </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {previewData.length > 0 ? `${previewData.length} questions found` : 'Processing file...'}
-              </Typography>
+            </Paper>
+            
+            <Box sx={{ mt: 2, textAlign: 'center' }}>
+              <Button
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={handleDownloadTemplate}
+                sx={{ mt: 2 }}
+              >
+                Download Template
+              </Button>
             </Box>
-          )}
-        </Box>
-
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        
-        {success && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            {success}
-          </Alert>
-        )}
-
-        {validationErrors.length > 0 && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            <Typography variant="subtitle2" gutterBottom>
-              Validation Errors:
-            </Typography>
-            <Box component="ul" sx={{ mt: 1, pl: 2 }}>
-              {validationErrors.map((error, index) => (
-                <li key={index}>{error}</li>
-              ))}
-            </Box>
-          </Alert>
-        )}
-
-        {/* Preview Dialog */}
-        <Dialog
-          open={showPreview}
-          onClose={() => setShowPreview(false)}
-          maxWidth="lg"
-          fullWidth
-        >
-          <DialogTitle>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">
-                Preview Questions
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={updateMode}
-                      onChange={(e) => setUpdateMode(e.target.checked)}
-                      color="primary"
-                    />
-                  }
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      Update Mode
-                      <Tooltip title="When enabled, existing questions will be updated instead of creating duplicates">
-                        <IconButton size="small">
-                          <HelpIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  }
-                />
-              </Box>
-            </Box>
-          </DialogTitle>
-          <DialogContent>
-            {uploadProgress > 0 && (
-              <Box sx={{ width: '100%', mb: 2 }}>
-                <LinearProgress variant="determinate" value={uploadProgress} />
-                <Typography variant="caption" color="text.secondary" align="center" display="block">
-                  Uploading... {Math.round(uploadProgress)}%
-                </Typography>
-              </Box>
-            )}
-            <TableContainer sx={{ maxHeight: 400 }}>
-              <Table stickyHeader>
+          </Box>
+        );
+      
+      case 1:
+        return (
+          <Box sx={{ mt: 4 }}>
+            <TableContainer component={Paper}>
+              <Table>
                 <TableHead>
                   <TableRow>
-                    <TableCell>Question</TableCell>
-                    <TableCell>Subject</TableCell>
-                    <TableCell>Year</TableCell>
-                    <TableCell>Options</TableCell>
-                    <TableCell>Answer</TableCell>
+                    <TableCell>File Name</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Size</TableCell>
+                    <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {previewData.map((question, index) => (
+                  {files.map((file, index) => (
                     <TableRow key={index}>
-                      <TableCell>{question.question}</TableCell>
-                      <TableCell>{question.subject}</TableCell>
-                      <TableCell>{question.year}</TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                          <Typography variant="body2">A: {question.option1}</Typography>
-                          <Typography variant="body2">B: {question.option2}</Typography>
-                          <Typography variant="body2">C: {question.option3}</Typography>
-                          <Typography variant="body2">D: {question.option4}</Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={question.answer}
-                          color="primary"
-                          size="small"
-                        />
+                      <TableCell>{file.name}</TableCell>
+                      <TableCell>{file.type}</TableCell>
+                      <TableCell>{(file.size / 1024).toFixed(2)} KB</TableCell>
+                      <TableCell align="right">
+                        <IconButton
+                          color="error"
+                          onClick={() => handleRemoveFile(index)}
+                          disabled={uploading}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </TableContainer>
-          </DialogContent>
-          <DialogActions>
-            <Button
-              onClick={() => setShowPreview(false)}
-              disabled={loading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleUpload}
-              color="primary"
-              variant="contained"
-              disabled={loading || previewData.length === 0}
-              startIcon={loading ? <CircularProgress size={20} /> : null}
-            >
-              {loading ? 'Uploading...' : `Upload ${previewData.length} Questions`}
-            </Button>
-          </DialogActions>
-        </Dialog>
+            
+            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
+              <Button
+                onClick={handleBack}
+                disabled={uploading}
+                startIcon={<ArrowBackIcon />}
+              >
+                Back
+              </Button>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleUpload}
+                disabled={uploading || files.length === 0}
+                startIcon={uploading ? <CircularProgress size={24} /> : <CloudUploadIcon />}
+              >
+                {uploading ? 'Uploading...' : 'Upload Questions'}
+              </Button>
+            </Box>
+            
+            {uploadError && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {uploadError}
+              </Alert>
+            )}
+          </Box>
+        );
+      
+      case 2:
+        return (
+          <Box sx={{ mt: 4 }}>
+            {uploadSuccess && (
+              <Alert severity="success" sx={{ mb: 3 }}>
+                Questions uploaded successfully!
+              </Alert>
+            )}
+            
+            {uploadResults && (
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={4}>
+                  <Card>
+                    <CardContent>
+                      <Typography variant="h6" gutterBottom>
+                        Total Questions
+                      </Typography>
+                      <Typography variant="h3" color="primary">
+                        {uploadResults.totalProcessed || 0}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+                
+                <Grid item xs={12} md={4}>
+                  <Card>
+                    <CardContent>
+                      <Typography variant="h6" gutterBottom>
+                        Successfully Added
+                      </Typography>
+                      <Typography variant="h3" color="success.main">
+                        {uploadResults.successCount || 0}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+                
+                <Grid item xs={12} md={4}>
+                  <Card>
+                    <CardContent>
+                      <Typography variant="h6" gutterBottom>
+                        Errors
+                      </Typography>
+                      <Typography variant="h3" color="error.main">
+                        {uploadResults.errorCount || 0}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+            )}
+            
+            {uploadResults?.errors && uploadResults.errors.length > 0 && (
+              <Box sx={{ mt: 4 }}>
+                <Typography variant="h6" gutterBottom>
+                  Error Details
+                </Typography>
+                <TableContainer component={Paper}>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Row</TableCell>
+                        <TableCell>Error</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {uploadResults.errors.map((error, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{error.row || 'N/A'}</TableCell>
+                          <TableCell>{error.message}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            )}
+            
+            {uploadResults?.subjects && (
+              <Box sx={{ mt: 4 }}>
+                <Typography variant="h6" gutterBottom>
+                  Questions by Subject
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {Object.entries(uploadResults.subjects).map(([subject, count]) => (
+                    <Chip 
+                      key={subject}
+                      label={`${subject}: ${count}`}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  ))}
+                </Box>
+              </Box>
+            )}
+            
+            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
+              <Button
+                variant="outlined"
+                onClick={handleReset}
+                startIcon={<RefreshIcon />}
+              >
+                Upload Another File
+              </Button>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => navigate('/admin/dashboard')}
+              >
+                Return to Dashboard
+              </Button>
+            </Box>
+          </Box>
+        );
+      
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" component="h1">
+          Upload Questions
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate('/admin/dashboard')}
+        >
+          Back to Dashboard
+        </Button>
+      </Box>
+      
+      <Paper sx={{ p: 3 }}>
+        <Stepper activeStep={activeStep}>
+          {steps.map((label) => (
+            <Step key={label}>
+              <StepLabel>{label}</StepLabel>
+            </Step>
+          ))}
+        </Stepper>
+        
+        {renderStepContent(activeStep)}
       </Paper>
     </Container>
   );

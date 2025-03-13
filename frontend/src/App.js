@@ -8,6 +8,7 @@ import { WebSocketProvider } from './contexts/WebSocketContext';
 // Layout Components
 import Navbar from './components/layout/Navbar';
 import ProtectedLayout from './components/layout/ProtectedLayout';
+import AdminRoute from './components/routes/AdminRoute';
 import RealTimeNotifications from './components/common/RealTimeNotifications';
 
 // Auth Pages
@@ -24,6 +25,9 @@ import Settings from './components/pages/user/Settings';
 
 // Admin Pages
 import AdminDashboard from './components/pages/admin/AdminDashboard';
+import UsersList from './components/pages/admin/UsersList';
+import UserForm from './components/pages/admin/UserForm';
+import Analytics from './components/pages/admin/Analytics';
 import UploadQuestions from './components/pages/admin/UploadQuestions';
 
 // Public Pages
@@ -72,9 +76,15 @@ const AppRoutes = () => {
         </Route>
 
         {/* Admin Routes */}
-        <Route element={<ProtectedLayout isAdmin={true} />}>
+        <Route element={<AdminRoute />}>
+          <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/admin/users" element={<UsersList />} />
+          <Route path="/admin/users/new" element={<UserForm />} />
+          <Route path="/admin/users/:userId/edit" element={<UserForm />} />
+          <Route path="/admin/stats" element={<Analytics />} />
           <Route path="/admin/upload-questions" element={<UploadQuestions />} />
+          <Route path="/admin/questions/upload" element={<Navigate to="/admin/upload-questions" replace />} />
         </Route>
 
         {/* Catch all route */}
